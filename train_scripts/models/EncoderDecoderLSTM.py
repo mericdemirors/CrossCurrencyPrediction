@@ -47,6 +47,7 @@ class EncoderDecoderLSTM(nn.Module):
         self.output_features = output_features
         self.output_window = output_window
         self.target_coin_index = target_coin_index
+        self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
     def forward(self, x, target=None):
         if target is not None:
