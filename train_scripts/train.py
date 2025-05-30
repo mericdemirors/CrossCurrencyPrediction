@@ -200,7 +200,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
         scheduler.step(val_loss)
 
         if hasattr(model, "set_teacher_forcing_ratio"):
-            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-0.001)
+            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-0.1)
 
         run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch)
         run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch)
