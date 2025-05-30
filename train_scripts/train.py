@@ -52,78 +52,13 @@ def plot_losses(train_losses, val_losses, train_session_dir, model_name):
     plt.savefig(os.path.join(train_session_dir, f"{model_name}_train_val_loss_plot.png"))
     plt.close()
 
-def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler=None, loss_fn=loss, train_session_dir=""):
-    best_val_loss = float("inf")
-    early_stop_step = 0
-    model_name = model.__class__.__name__
-
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        # --- Training ---
-        model.train()
-        train_loss = 0.0
-
-        for x_batch, y_batch in tqdm(train_loader, desc="train_loader"):
-            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-
-            optimizer.zero_grad()
-            output = model.call(x_batch, y_batch)
-            loss = loss_fn(model, output, y_batch)
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-
-        train_loss /= len(train_loader)
-        train_losses.append(train_loss)
-
-        # --- val ---
-        model.eval()
-        val_loss = 0.0
-
-        with torch.no_grad():
-            for x_batch, y_batch in tqdm(val_loader, desc="val_loader"):
-                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-                output = model.call(x_batch, y_batch)
-                loss = loss_fn(model, output, y_batch)
-                val_loss += loss.item()
-        val_loss /= len(val_loader)
-        val_losses.append(val_loss)
-
-        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
-
-        # --- Checkpointing ---
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            early_stop_step = 0
-
-            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch+1:02d}_val{val_loss:.4f}.pt"))
-            print(f"New best model.")
-        else:
-            early_stop_step += 1
-            if early_stop_step >= early_stop_patience:
-                print(f"Early stopping.")
-                break
-
-        if scheduler:
-            scheduler.step(val_loss)
-
-        if hasattr(model, "set_teacher_forcing_ratio"):
-            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-0.001)
-
-        run_inference_and_plot(model, val_loader, train_session_dir, model_name, epoch)
-
-    plot_losses(train_losses, val_losses, train_session_dir, model_name)
-
 def run_inference_and_plot(model, val_loader, train_session_dir, model_name, epoch):
     model.eval()
     all_targets = []
     all_predictions = []
 
     with torch.no_grad():
-        for x_batch, y_batch in tqdm(val_loader):
+        for x_batch, y_batch in tqdm(val_loader, leave=False):
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
 
@@ -159,11 +94,17 @@ def run_inference_and_plot(model, val_loader, train_session_dir, model_name, epo
     plt.close()
 
 def train_with_args(args):
-    train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
     val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
+
+    inference_train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    inference_val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+
+    inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
+    inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
     model_kwargs = {
         "input_features": args.input_features,
@@ -191,7 +132,73 @@ def train_with_args(args):
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler, loss_fn=loss, train_session_dir=train_session_dir)
+    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler, loss_fn=loss, train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
+
+def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler=None, loss_fn=loss, train_session_dir="", inference_dataloaders=(None, None)):
+    best_val_loss = float("inf")
+    early_stop_step = 0
+    model_name = model.__class__.__name__
+
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        # --- Training ---
+        model.train()
+        train_loss = 0.0
+
+        for x_batch, y_batch in tqdm(train_loader, desc="train_loader", leave=False):
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+
+            optimizer.zero_grad()
+            output = model.call(x_batch, y_batch)
+            loss = loss_fn(model, output, y_batch)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        train_loss /= len(train_loader)
+        train_losses.append(train_loss)
+
+        # --- val ---
+        model.eval()
+        val_loss = 0.0
+
+        with torch.no_grad():
+            for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
+                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+                output = model.call(x_batch, y_batch)
+                loss = loss_fn(model, output, y_batch)
+                val_loss += loss.item()
+        val_loss /= len(val_loader)
+        val_losses.append(val_loss)
+
+        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+
+        # --- Checkpointing ---
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            early_stop_step = 0
+
+            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch+1:02d}_val{val_loss:.4f}.pt"))
+            print(f"New best model.")
+        else:
+            early_stop_step += 1
+            if early_stop_step >= early_stop_patience:
+                print(f"Early stopping.")
+                break
+
+        if scheduler:
+            scheduler.step(val_loss)
+
+        if hasattr(model, "set_teacher_forcing_ratio"):
+            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-0.001)
+
+        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch)
+        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch)
+
+    plot_losses(train_losses, val_losses, train_session_dir, model_name)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -214,6 +221,8 @@ def main():
     parser.add_argument("--z_norm_stds_csv_path", type=str, default="")
     parser.add_argument("--augmentation_p", type=float, default=0.2)
     parser.add_argument("--augmentation_std", type=float, default=0.01)
+    parser.add_argument("--augment_constant_c", type=float, default=1.0)
+    parser.add_argument("--augment_scale_s", type=float, default=0.25)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--early_stop_patience", type=int, default=5)

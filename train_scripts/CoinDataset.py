@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 
 class CoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p = 0.2, augmentation_noise_std=0.01, z_norm_means_csv_path="", z_norm_stds_csv_path=""):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p = 0.2, augmentation_noise_std=0.01, augment_constant_c=1, augment_scale_s=0.25, z_norm_means_csv_path="", z_norm_stds_csv_path=""):
         self.df = pd.read_csv(csv_path)
         
         # first column is open_time, so skip it
@@ -15,8 +15,10 @@ class CoinDataset(Dataset):
         self.input_window = input_window
         self.output_window = output_window
 
-        self.augmentation_noise_std = augmentation_noise_std
         self.augmentation_p = augmentation_p
+        self.augmentation_noise_std = augmentation_noise_std
+        self.augment_constant_c = augment_constant_c
+        self.augment_scale_s = augment_scale_s
 
         self.z_norm_means_df = pd.read_csv(z_norm_means_csv_path)
         self.z_norm_stds_df = pd.read_csv(z_norm_stds_csv_path)
@@ -48,13 +50,18 @@ class CoinDataset(Dataset):
         return real_price.T
     
     def augment(self, x):
-        x_aug = x + np.random.normal(scale=self.augmentation_noise_std, size=x.shape)
+        if torch.rand(1) < 0.33:
+            x_aug = x + np.random.normal(scale=self.augmentation_noise_std, size=x.shape)
 
-        # this dict explains the low <= close & open <= high logic for each coin
-        clip_rules = {(0,1): (2, 3), (4,5): (6, 7), (8,9): (10, 11), (12,13): (14, 15)}
+            # this dict explains the low <= close & open <= high logic for each coin
+            clip_rules = {(0,1): (2, 3), (4,5): (6, 7), (8,9): (10, 11), (12,13): (14, 15)}
 
-        for ((open_row, close_row), (low_row, high_row)) in clip_rules.items():
-            x_aug[open_row] = np.clip(x_aug[open_row], x_aug[low_row], x_aug[high_row])
-            x_aug[close_row] = np.clip(x_aug[close_row], x_aug[low_row], x_aug[high_row])
+            for ((open_row, close_row), (low_row, high_row)) in clip_rules.items():
+                x_aug[open_row] = np.clip(x_aug[open_row], x_aug[low_row], x_aug[high_row])
+                x_aug[close_row] = np.clip(x_aug[close_row], x_aug[low_row], x_aug[high_row])
+        elif torch.rand(1) < 0.66:
+            x_aug = x + np.random.uniform(-self.augment_constant_c, self.augment_constant_c)
+        else:
+            x_aug = x * (1 + np.random.uniform(-self.augment_scale_s, self.augment_scale_s))
 
         return x_aug
