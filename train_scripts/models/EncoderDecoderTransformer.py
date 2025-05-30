@@ -75,7 +75,7 @@ class EncoderDecoderTransformer(nn.Module):
         full_tgt_mask = self.generate_square_subsequent_mask(self.output_window + 1).to(src.device)
 
         for t in range(self.output_window):
-            decoder_input = output[:, :t+1+1, :]
+            decoder_input = output[:, :t+1+1, :].clone()
             decoder_input = self.output_proj(decoder_input) * math.sqrt(self.hidden_dim)
             decoder_input = self.pos_decoder(decoder_input)
 
