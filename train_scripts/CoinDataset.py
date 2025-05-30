@@ -50,7 +50,7 @@ class CoinDataset(Dataset):
         return real_price.T
     
     def augment(self, x):
-        if torch.rand(1) < 0.33:
+        if torch.rand(1) < self.augmentation_p:
             x_aug = x + np.random.normal(scale=self.augmentation_noise_std, size=x.shape)
 
             # this dict explains the low <= close & open <= high logic for each coin
@@ -59,9 +59,9 @@ class CoinDataset(Dataset):
             for ((open_row, close_row), (low_row, high_row)) in clip_rules.items():
                 x_aug[open_row] = np.clip(x_aug[open_row], x_aug[low_row], x_aug[high_row])
                 x_aug[close_row] = np.clip(x_aug[close_row], x_aug[low_row], x_aug[high_row])
-        elif torch.rand(1) < 0.66:
+        if torch.rand(1) < self.augmentation_p:
             x_aug = x + np.random.uniform(-self.augment_constant_c, self.augment_constant_c)
-        else:
+        if torch.rand(1) < self.augmentation_p:
             x_aug = x * (1 + np.random.uniform(-self.augment_scale_s, self.augment_scale_s))
 
         return x_aug
