@@ -103,13 +103,13 @@ def run_inference_and_plot(model, val_loader, train_session_dir, model_name, epo
 
 def train_with_args(args):
     train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-    val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
 
-    inference_train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-    inference_val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    inference_train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    inference_val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
 
     inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
     inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
