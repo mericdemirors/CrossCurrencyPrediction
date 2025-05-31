@@ -1,6 +1,7 @@
 import os
 import json
 import argparse
+import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -45,7 +46,7 @@ def loss(model, prediction, target, logic_loss_weight, l1_loss_weight, l2_loss_w
 
     # --- Final loss ---
     total_loss = base_loss + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss
+    return total_loss, [base_loss.item(), (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
 def plot_losses(train_losses, val_losses, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
@@ -60,13 +61,13 @@ def plot_losses(train_losses, val_losses, train_session_dir, model_name):
     plt.savefig(os.path.join(train_session_dir, f"{model_name}_train_val_loss_plot.png"))
     plt.close()
 
-def run_inference_and_plot(model, val_loader, train_session_dir, model_name, epoch):
-    model.eval()
+def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
+    model = model.eval()
     all_targets = []
     all_predictions = []
 
     with torch.no_grad():
-        for x_batch, y_batch in tqdm(val_loader, leave=False):
+        for x_batch, y_batch in tqdm(loader, leave=False):
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
 
@@ -152,15 +153,16 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
     for epoch in range(epochs):
         # --- Training ---
-        model.train()
+        model = model.train()
         train_loss = 0.0
+        individual_train_losses = None
 
         for x_batch, y_batch in tqdm(train_loader, desc="train_loader", leave=False):
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
 
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
-            loss = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_train_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
@@ -170,19 +172,20 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
         train_losses.append(train_loss)
 
         # --- val ---
-        model.eval()
+        model = model.eval()
         val_loss = 0.0
+        individual_val_losses = None
 
         with torch.no_grad():
             for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 output = model.call(x_batch, y_batch)
-                loss = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_val_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
                 val_loss += loss.item()
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n Val Loss: {val_loss:.4f} ({individual_val_losses})")
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
@@ -226,16 +229,16 @@ def main():
     parser.add_argument("--val_csv_path", type=str, default="")
     parser.add_argument("--z_norm_means_csv_path", type=str, default="")
     parser.add_argument("--z_norm_stds_csv_path", type=str, default="")
-    parser.add_argument("--augmentation_p", type=float, default=0.5)
-    parser.add_argument("--augmentation_std", type=float, default=0.01)
-    parser.add_argument("--augment_constant_c", type=float, default=0.2)
-    parser.add_argument("--augment_scale_s", type=float, default=0.05)
+    parser.add_argument("--augmentation_p", type=float, default=0.75)
+    parser.add_argument("--augmentation_std", type=float, default=0.05)
+    parser.add_argument("--augment_constant_c", type=float, default=1)
+    parser.add_argument("--augment_scale_s", type=float, default=0.25)
     parser.add_argument("--logical_loss_weight", type=float, default=1e-5)
     parser.add_argument("--l1_loss_weight", type=float, default=0.0)
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--early_stop_patience", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--early_stop_patience", type=int, default=7)
     args = parser.parse_args()
     train_with_args(args)
 
