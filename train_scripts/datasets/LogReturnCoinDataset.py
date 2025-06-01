@@ -5,8 +5,9 @@ import torch
 from torch.utils.data import Dataset
 
 class LogReturnCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, domain_scale):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, distribution_clip, distribution_scale):
         self.df = pd.read_csv(csv_path)
+        self.df[self.df.columns[1:]] = self.df[self.df.columns[1:]].clip(-distribution_clip, distribution_clip)
 
         # first column is open_time, so skip it
         start, end  = {'BTC': (1, 5), 'ETH': (5, 9), 'BNB': (9, 13), 'XRP': (13, 17)}[coin_symbol]
@@ -19,7 +20,7 @@ class LogReturnCoinDataset(Dataset):
         self.augmentation_noise_std = augmentation_noise_std
         self.augment_constant_c = augment_constant_c
         self.augment_scale_s = augment_scale_s
-        self.domain_scale = domain_scale
+        self.distribution_scale = distribution_scale
 
     def __len__(self):
         return len(self.df) - self.input_window - self.output_window + 1
@@ -32,7 +33,7 @@ class LogReturnCoinDataset(Dataset):
         analysis_matrix = analysis_rows[analysis_rows.columns[1:]].to_numpy()
         prediction_target = prediction_rows[self.coin_cols].to_numpy()
 
-        x, y = analysis_matrix.T * self.domain_scale, prediction_target.T * self.domain_scale
+        x, y = analysis_matrix.T * self.distribution_scale, prediction_target.T * self.distribution_scale
 
         if np.random.rand() < self.augmentation_p:
             x = self.augment(x)

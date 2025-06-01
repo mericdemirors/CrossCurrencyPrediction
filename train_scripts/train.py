@@ -13,12 +13,16 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from import_model import import_model
-from LogZNormCoinDataset import LogZNormCoinDataset
-from LogReturnCoinDataset import LogReturnCoinDataset
+from import_dataset import import_dataset
 
-def loss(model, prediction, target, logic_loss_weight, l1_loss_weight, l2_loss_weight):
+def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
-    base_loss = nn.MSELoss()(prediction, target)
+    if loss_name == "MSE":
+        base_loss = nn.MSELoss()(prediction, target)
+    elif loss_name == "MAE":
+        base_loss = nn.L1Loss()(prediction, target)
+    elif loss_name == "SmoothL1":
+        base_loss = nn.SmoothL1Loss()(prediction, target)
 
     # --- Logical constraints ---
     open_ = prediction[:, 0, :]
@@ -104,20 +108,37 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     plt.close()
 
 def train_with_args(args):
-    if args.z_norm_means_csv_path == "" and args.z_norm_stds_csv_path == "":
-        train_dataset = LogReturnCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
-        val_dataset = LogReturnCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
-
-        inference_train_dataset = LogReturnCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
-        inference_val_dataset = LogReturnCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
+    train_dataset_kwargs = {"csv_path": args.train_csv_path, "coin_symbol": args.coin_symbol,
+    "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_p": args.augmentation_p, "augmentation_noise_std": args.augmentation_noise_std,
+    "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    val_dataset_kwargs = {"csv_path": args.val_csv_path, "coin_symbol": args.coin_symbol,
+    "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_p": args.augmentation_p, "augmentation_noise_std": args.augmentation_noise_std,
+    "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
     
-        args.logical_loss_weight = 0
-    else:
-        train_dataset = LogZNormCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-        val_dataset = LogZNormCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-
-        inference_train_dataset = LogZNormCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-        inference_val_dataset = LogZNormCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    inference_train_dataset_kwargs = {"csv_path": args.train_csv_path, "coin_symbol": args.coin_symbol,
+    "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_p": 0, "augmentation_noise_std": args.augmentation_noise_std,
+    "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    inference_val_dataset_kwargs = {"csv_path": args.val_csv_path, "coin_symbol": args.coin_symbol,
+    "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_p": 0, "augmentation_noise_std": args.augmentation_noise_std,
+    "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    
+    train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
+    val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
+    
+    inference_train_dataset = import_dataset(args.dataset_name, **inference_train_dataset_kwargs)
+    inference_val_dataset = import_dataset(args.dataset_name, **inference_val_dataset_kwargs)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
@@ -125,20 +146,16 @@ def train_with_args(args):
     inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
     inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
-    model_kwargs = {
-        "input_features": args.input_features,
-        "output_features": args.output_features,
-        "input_window": args.input_window,
-        "output_window": args.output_window,
-        "dropout": args.dropout,
-        "num_layers": args.num_layers,
-        "hidden_dim": args.hidden_dim,
-        "num_heads": args.num_heads,
+    if args.dataset_name == "LogZNormCoinDataset":
+        args.logical_loss_weight = 0
+
+    model_kwargs = {"input_features": args.input_features, "output_features": args.output_features,
+        "input_window": args.input_window, "output_window": args.output_window,
+        "dropout": args.dropout, "num_layers": args.num_layers,
+        "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
         "teacher_forcing_ratio": args.teacher_forcing_ratio,
         "target_coin_index": args.target_coin_index,
-        "num_coins": args.num_coins,
-        "device": device
-    }
+        "num_coins": args.num_coins, "device": device}
 
     model = import_model(args.model_name, **model_kwargs)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -151,9 +168,14 @@ def train_with_args(args):
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler, logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight, l2_loss_weight=args.l2_loss_weight, loss_fn=loss, train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
+    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs,
+                early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
+                logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
+                l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
+                train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
 
-def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler,  logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_fn=loss, train_session_dir="", inference_dataloaders=(None, None)):
+def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler,
+                logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="", inference_dataloaders=(None, None)):
     best_val_loss = float("inf")
     early_stop_step = 0
     model_name = model.__class__.__name__
@@ -172,7 +194,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
-            loss, individual_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
@@ -195,7 +217,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
             for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 output = model.call(x_batch, y_batch)
-                loss, individual_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
                 
                 val_loss += loss.item()
                 if individual_val_losses is not None:
@@ -216,7 +238,6 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
             [os.remove(os.path.join(train_session_dir,x)) for x in os.listdir(train_session_dir) if x.endswith(".pt")]
             
-
             torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch+1:02d}_val{val_loss:.4f}.pt"))
             print(f"New best model.")
         else:
@@ -250,17 +271,20 @@ def main():
     parser.add_argument("--target_coin_index", type=int, default=0)
     parser.add_argument("--num_coins", type=int, default=4)
     parser.add_argument("--coin_symbol", type=str, default="BTC")
+    parser.add_argument("--dataset_name", type=str, default="")
     parser.add_argument("--train_csv_path", type=str, default="")
     parser.add_argument("--val_csv_path", type=str, default="")
     parser.add_argument("--z_norm_means_csv_path", type=str, default="")
     parser.add_argument("--z_norm_stds_csv_path", type=str, default="")
-    parser.add_argument("--augmentation_p", type=float, default=0.75)
-    parser.add_argument("--augmentation_std", type=float, default=0.05)
-    parser.add_argument("--augment_constant_c", type=float, default=1)
+    parser.add_argument("--augmentation_p", type=float, default=0.5)
+    parser.add_argument("--augmentation_noise_std", type=float, default=0.05)
+    parser.add_argument("--augment_constant_c", type=float, default=3)
     parser.add_argument("--augment_scale_s", type=float, default=0.25)
-    parser.add_argument("--domain_scale", type=float, default=100)
-    parser.add_argument("--logical_loss_weight", type=float, default=1e-5)
-    parser.add_argument("--l1_loss_weight", type=float, default=0.0)
+    parser.add_argument("--distribution_scale", type=float, default=100)
+    parser.add_argument("--distribution_clip", type=float, default=0.2)
+    parser.add_argument("--loss_name", type=str, default="")
+    parser.add_argument("--logical_loss_weight", type=float, default=1e-3)
+    parser.add_argument("--l1_loss_weight", type=float, default=1e-5)
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=40)
