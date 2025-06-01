@@ -6,7 +6,7 @@ def import_model(model_name, **kwargs):
         device = kwargs["device"]
 
         # import the model's class and check it's init parameters
-        module = importlib.import_module(f"models.{model_name}")
+        module = importlib.import_module(f"model_classes.{model_name}")
         model_class = getattr(module, model_name)
         sig = inspect.signature(model_class.__init__)
         

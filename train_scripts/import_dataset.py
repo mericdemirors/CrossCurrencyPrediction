@@ -4,7 +4,7 @@ import inspect
 def import_dataset(dataset_name, **kwargs):
     try:
         # import the dataset's class and check it's init parameters
-        module = importlib.import_module(f"datasets.{dataset_name}")
+        module = importlib.import_module(f"dataset_classes.{dataset_name}")
         dataset_class = getattr(module, dataset_name)
         sig = inspect.signature(dataset_class.__init__)
         
