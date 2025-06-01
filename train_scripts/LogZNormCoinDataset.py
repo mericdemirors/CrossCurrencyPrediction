@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-class CoinDataset(Dataset):
+class LogZNormCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, z_norm_means_csv_path="", z_norm_stds_csv_path=""):
         self.df = pd.read_csv(csv_path)
         

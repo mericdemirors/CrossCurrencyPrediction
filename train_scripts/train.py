@@ -13,11 +13,12 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from import_model import import_model
-from CoinDataset import CoinDataset
+from LogZNormCoinDataset import LogZNormCoinDataset
+from LogReturnCoinDataset import LogReturnCoinDataset
 
 def loss(model, prediction, target, logic_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
-    base_loss = nn.SmoothL1Loss()(prediction, target)
+    base_loss = nn.MSELoss()(prediction, target)
 
     # --- Logical constraints ---
     open_ = prediction[:, 0, :]
@@ -103,15 +104,24 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     plt.close()
 
 def train_with_args(args):
-    train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-    val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+    if args.z_norm_means_csv_path == "" and args.z_norm_stds_csv_path == "":
+        train_dataset = LogReturnCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
+        val_dataset = LogReturnCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
+
+        inference_train_dataset = LogReturnCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
+        inference_val_dataset = LogReturnCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, domain_scale=args.domain_scale)
+    
+        args.logical_loss_weight = 0
+    else:
+        train_dataset = LogZNormCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=args.augmentation_p, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+        val_dataset = LogZNormCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+
+        inference_train_dataset = LogZNormCoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
+        inference_val_dataset = LogZNormCoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
-
-    inference_train_dataset = CoinDataset(args.train_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-    inference_val_dataset = CoinDataset(args.val_csv_path, coin_symbol=args.coin_symbol, input_window=args.input_window, output_window=args.output_window, augmentation_p=0, augmentation_noise_std=args.augmentation_std, augment_constant_c=args.augment_constant_c, augment_scale_s=args.augment_scale_s, z_norm_means_csv_path=args.z_norm_means_csv_path, z_norm_stds_csv_path=args.z_norm_stds_csv_path)
-
+    
     inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
     inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
@@ -248,6 +258,7 @@ def main():
     parser.add_argument("--augmentation_std", type=float, default=0.05)
     parser.add_argument("--augment_constant_c", type=float, default=1)
     parser.add_argument("--augment_scale_s", type=float, default=0.25)
+    parser.add_argument("--domain_scale", type=float, default=100)
     parser.add_argument("--logical_loss_weight", type=float, default=1e-5)
     parser.add_argument("--l1_loss_weight", type=float, default=0.0)
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
