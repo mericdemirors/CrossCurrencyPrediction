@@ -162,13 +162,18 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
-            loss, individual_train_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
             train_loss += loss.item()
+            if individual_train_losses is not None:
+                individual_train_losses += np.array(individual_losses)
+            else:
+                individual_train_losses = np.array(individual_losses)
 
         train_loss /= len(train_loader)
+        individual_train_losses /= len(train_loader)
         train_losses.append(train_loss)
 
         # --- val ---
@@ -180,17 +185,27 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
             for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 output = model.call(x_batch, y_batch)
-                loss, individual_val_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_losses = loss_fn(model, output, y_batch, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                
                 val_loss += loss.item()
+                if individual_val_losses is not None:
+                    individual_val_losses += np.array(individual_losses)
+                else:
+                    individual_val_losses = np.array(individual_losses)
+        
         val_loss /= len(val_loader)
+        individual_val_losses /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n Val Loss: {val_loss:.4f} ({individual_val_losses})")
+        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             early_stop_step = 0
+
+            [os.remove(os.path.join(train_session_dir,x)) for x in os.listdir(train_session_dir) if x.endswith(".pt")]
+            
 
             torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch+1:02d}_val{val_loss:.4f}.pt"))
             print(f"New best model.")
