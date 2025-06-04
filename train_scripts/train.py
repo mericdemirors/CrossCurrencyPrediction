@@ -25,7 +25,7 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
         base_loss_fn = nn.SmoothL1Loss()
 
     base_loss = base_loss_fn(prediction, target)
-    return base_loss, []
+
     # feature-wise losses
     base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :]).item()
     base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :]).item()
@@ -57,10 +57,9 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
             l1_reg += param.abs().sum()
             l2_reg += (param ** 2).sum()
 
-    
     # punishes the model for predicting zero, trying to push predictions away from the mean
-    # zero_penalty = -1 * prediction.abs().mean()
-    zero_penalty = torch.tensor(0., device=prediction.device)
+    weighted_mae = torch.abs(prediction - target) * torch.abs(target)
+    zero_penalty = weighted_mae.mean()
 
     # --- Final loss ---
     total_loss = base_loss + zero_penalty + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
@@ -219,10 +218,9 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
             else:
                 individual_train_losses = np.array(individual_losses)
 
-            if ei % 20 == 0 and ei>0:
+            if ei % 95 == 0 and ei>0:
                 run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", f"{epoch}-{ei}")
                 run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", f"{epoch}-{ei}")
-
 
         train_loss /= len(train_loader)
         individual_train_losses /= len(train_loader)
