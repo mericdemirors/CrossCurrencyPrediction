@@ -18,11 +18,19 @@ from import_dataset import import_dataset
 def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
     if loss_name == "MSE":
-        base_loss = nn.MSELoss()(prediction, target)
+        base_loss_fn = nn.MSELoss()
     elif loss_name == "MAE":
-        base_loss = nn.L1Loss()(prediction, target)
+        base_loss_fn = nn.L1Loss()
     elif loss_name == "SmoothL1":
-        base_loss = nn.SmoothL1Loss()(prediction, target)
+        base_loss_fn = nn.SmoothL1Loss()
+
+    base_loss = base_loss_fn(prediction, target)
+
+    # feature-wise losses
+    base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :]).item()
+    base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :]).item()
+    base_loss_low = base_loss_fn(prediction[:, 2, :], target[:, 2, :]).item()
+    base_loss_high = base_loss_fn(prediction[:, 3, :], target[:, 3, :]).item()
 
     # --- Logical constraints ---
     open_ = prediction[:, 0, :]
@@ -49,9 +57,13 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
             l1_reg += param.abs().sum()
             l2_reg += (param ** 2).sum()
 
+    
+    # punishes the model for predicting zero, trying to push predictions away from the mean
+    zero_penalty = -1 * prediction.abs().mean()
+
     # --- Final loss ---
-    total_loss = base_loss + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss, [base_loss.item(), (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
+    total_loss = base_loss + zero_penalty + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
+    return total_loss, [base_loss.item(), zero_penalty.item(), base_loss_open, base_loss_close, base_loss_low, base_loss_high, (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
 def plot_losses(train_losses, val_losses, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
@@ -140,8 +152,8 @@ def train_with_args(args):
     inference_train_dataset = import_dataset(args.dataset_name, **inference_train_dataset_kwargs)
     inference_val_dataset = import_dataset(args.dataset_name, **inference_val_dataset_kwargs)
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
     
     inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
     inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False)
@@ -189,11 +201,27 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
         train_loss = 0.0
         individual_train_losses = None
 
-        for x_batch, y_batch in tqdm(train_loader, desc="train_loader", leave=False):
+        for ei, (x_batch, y_batch) in tqdm(enumerate(train_loader), desc="train_loader", leave=False):
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+            # print("x_batch:", x_batch.shape, x_batch)
+            # print("y_batch:", y_batch.shape, y_batch)
+            # if ei % 40 == 0:
+            #     y_np = y_batch.detach().cpu().numpy()
+
+            #     mean_y = np.mean(y_np, axis=(0, 2))
+            #     std_y = np.std(y_np, axis=(0, 2))
+            #     print("y_batch mean std:", mean_y, std_y)
 
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
+
+            # if ei % 40 == 0:
+            #     output_np = output.detach().cpu().numpy()
+            #     mean_out = np.mean(output_np, axis=(0, 2))
+            #     std_out = np.std(output_np, axis=(0, 2))
+            #     print("output mean std:", mean_out, std_out)
+
+            # print("output:", output.shape, output)
             loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
@@ -281,7 +309,7 @@ def main():
     parser.add_argument("--augment_constant_c", type=float, default=3)
     parser.add_argument("--augment_scale_s", type=float, default=0.25)
     parser.add_argument("--distribution_scale", type=float, default=100)
-    parser.add_argument("--distribution_clip", type=float, default=0.2)
+    parser.add_argument("--distribution_clip", type=float, default=10)
     parser.add_argument("--loss_name", type=str, default="")
     parser.add_argument("--logical_loss_weight", type=float, default=1e-3)
     parser.add_argument("--l1_loss_weight", type=float, default=1e-5)

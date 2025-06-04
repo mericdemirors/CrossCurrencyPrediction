@@ -5,8 +5,9 @@ import torch
 from torch.utils.data import Dataset
 
 class LogReturnCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, distribution_clip, distribution_scale):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, distribution_scale, distribution_clip):
         self.df = pd.read_csv(csv_path)
+        self.df[self.df.columns[1:]] = self.df[self.df.columns[1:]] * distribution_scale
         self.df[self.df.columns[1:]] = self.df[self.df.columns[1:]].clip(-distribution_clip, distribution_clip)
 
         # first column is open_time, so skip it
@@ -33,7 +34,7 @@ class LogReturnCoinDataset(Dataset):
         analysis_matrix = analysis_rows[analysis_rows.columns[1:]].to_numpy()
         prediction_target = prediction_rows[self.coin_cols].to_numpy()
 
-        x, y = analysis_matrix.T * self.distribution_scale, prediction_target.T * self.distribution_scale
+        x, y = analysis_matrix.T, prediction_target.T
 
         if np.random.rand() < self.augmentation_p:
             x = self.augment(x)
