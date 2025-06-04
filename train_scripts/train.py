@@ -25,7 +25,7 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
         base_loss_fn = nn.SmoothL1Loss()
 
     base_loss = base_loss_fn(prediction, target)
-
+    return base_loss, []
     # feature-wise losses
     base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :]).item()
     base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :]).item()
@@ -59,7 +59,8 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
 
     
     # punishes the model for predicting zero, trying to push predictions away from the mean
-    zero_penalty = -1 * prediction.abs().mean()
+    # zero_penalty = -1 * prediction.abs().mean()
+    zero_penalty = torch.tensor(0., device=prediction.device)
 
     # --- Final loss ---
     total_loss = base_loss + zero_penalty + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
@@ -118,6 +119,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     plt.tight_layout()
     plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch}.png"))
     plt.close()
+    model = model.train()
 
 def train_with_args(args):
     train_dataset_kwargs = {"csv_path": args.train_csv_path, "coin_symbol": args.coin_symbol,
@@ -203,25 +205,10 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
         for ei, (x_batch, y_batch) in tqdm(enumerate(train_loader), desc="train_loader", leave=False):
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-            # print("x_batch:", x_batch.shape, x_batch)
-            # print("y_batch:", y_batch.shape, y_batch)
-            # if ei % 40 == 0:
-            #     y_np = y_batch.detach().cpu().numpy()
-
-            #     mean_y = np.mean(y_np, axis=(0, 2))
-            #     std_y = np.std(y_np, axis=(0, 2))
-            #     print("y_batch mean std:", mean_y, std_y)
 
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
 
-            # if ei % 40 == 0:
-            #     output_np = output.detach().cpu().numpy()
-            #     mean_out = np.mean(output_np, axis=(0, 2))
-            #     std_out = np.std(output_np, axis=(0, 2))
-            #     print("output mean std:", mean_out, std_out)
-
-            # print("output:", output.shape, output)
             loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
@@ -231,6 +218,11 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
                 individual_train_losses += np.array(individual_losses)
             else:
                 individual_train_losses = np.array(individual_losses)
+
+            if ei % 20 == 0 and ei>0:
+                run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", f"{epoch}-{ei}")
+                run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", f"{epoch}-{ei}")
+
 
         train_loss /= len(train_loader)
         individual_train_losses /= len(train_loader)
