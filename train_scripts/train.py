@@ -27,10 +27,10 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
     base_loss = base_loss_fn(prediction, target)
 
     # feature-wise losses
-    base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :]).item()
-    base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :]).item()
-    base_loss_low = base_loss_fn(prediction[:, 2, :], target[:, 2, :]).item()
-    base_loss_high = base_loss_fn(prediction[:, 3, :], target[:, 3, :]).item()
+    base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :])
+    base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :])
+    base_loss_low = base_loss_fn(prediction[:, 2, :], target[:, 2, :])
+    base_loss_high = base_loss_fn(prediction[:, 3, :], target[:, 3, :])
 
     # --- Logical constraints ---
     open_ = prediction[:, 0, :]
@@ -63,9 +63,11 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
 
     # --- Final loss ---
     total_loss = base_loss + zero_penalty + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss, [base_loss.item(), zero_penalty.item(), base_loss_open, base_loss_close, base_loss_low, base_loss_high, (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
+    return total_loss, [base_loss.item(), zero_penalty.item(), base_loss_open.item(), base_loss_close.item(), 
+                        base_loss_low.item(), base_loss_high.item(), (logic_loss_weight*logic_loss).item(), 
+                        (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
-def plot_losses(train_losses, val_losses, train_session_dir, model_name):
+def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
     plt.plot(train_losses, label="Train Loss", color="blue")
     plt.plot(val_losses, label="Val Loss", color="orange")
@@ -75,7 +77,46 @@ def plot_losses(train_losses, val_losses, train_session_dir, model_name):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f"{model_name}_train_val_loss_plot.png"))
+
+    # Plot vertical lines for LR drops
+    ax = plt.gca()
+    for epoch in lr_steps:
+        ax.axvline(x=epoch, color='grey', linestyle='--', label='LR drop')
+
+    # To avoid repeating the label multiple times in the legend
+    handles, labels = ax.get_legend_handles_labels()
+    from collections import OrderedDict
+    by_label = OrderedDict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys())    
+    
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_train_val_losses_plot.png"))
+    plt.close()
+
+def plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name):
+    plt.figure(figsize=(10, 6))
+    plt.plot(weight_norms_epoch, label='Weight', color="blue")
+    plt.plot(grad_norms_epoch, label='Grad', color="orange")
+    plt.xlabel('Epoch')
+    plt.ylabel('L2 Norm')
+    plt.title(f"{model_name} - Weight and Grad Norms")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_weight_grad_norms_plot.png"))
+    plt.close()
+
+def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch):
+    plt.hist(weights, bins=100, label='Weights', alpha=0.7)
+    plt.hist(grads, bins=100, label='Grads', alpha=0.7)
+    plt.legend()
+    plt.grid(True)
+    plt.title(f"{model_name} - Weight and Grad Distributions")
+    plt.xlabel('Values')
+    plt.xlim((-1, 1))
+    plt.ylabel('Frequency (log scale)')
+    plt.yscale('log')
+    plt.tight_layout()
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_epoch{epoch:02d}_weight_grad_dists_plot.png"))
     plt.close()
 
 def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
@@ -116,7 +157,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
         plt.legend()
 
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch}.png"))
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch:02d}.png"))
     plt.close()
     model = model.train()
 
@@ -171,8 +212,13 @@ def train_with_args(args):
         "num_coins": args.num_coins, "device": device}
 
     model = import_model(args.model_name, **model_kwargs)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+    if args.optimizer_name == "Adam":
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer_name == "RMSprop":
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=args.lr)
+    elif args.optimizer_name == "SGD":
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=args.lr_patience, factor=args.lr_decrease)
 
     start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     train_session_dir = os.path.join("train_sessions", f"{args.model_name}_{start_time}")
@@ -183,18 +229,24 @@ def train_with_args(args):
 
     train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
+                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease,
                 logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
                 train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
 
-def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler,
-                logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="", inference_dataloaders=(None, None)):
+def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
+                logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
+                inference_dataloaders=(None, None)):
     best_val_loss = float("inf")
     early_stop_step = 0
     model_name = model.__class__.__name__
 
     train_losses = []
     val_losses = []
+    weight_norms_epoch = []
+    grad_norms_epoch = []
+    lr_steps = []
+    current_lr = optimizer.param_groups[0]['lr']
 
     for epoch in range(epochs):
         # --- Training ---
@@ -212,15 +264,31 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
             loss.backward()
             optimizer.step()
 
+            with torch.no_grad():
+                weight_norms, grad_norms = [], []
+                weights, grads = [], []
+
+                for name, param in model.named_parameters():
+                    if param.requires_grad:
+                        weight_norms.append(param.detach().norm(2).item())
+                        weights.append(param.detach().cpu().numpy().flatten()) 
+                        if param.grad is not None:
+                            grad_norms.append(param.grad.detach().norm(2).item())
+                            grads.append(param.grad.detach().cpu().numpy().flatten()) 
+
+                weight_norms_epoch.append(sum(weight_norms) / len(weight_norms))
+                grad_norms_epoch.append(sum(grad_norms) / len(grad_norms))
+
+                weights = np.concatenate(weights)
+                grads = np.concatenate(grads)
+
+                plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
+
             train_loss += loss.item()
             if individual_train_losses is not None:
                 individual_train_losses += np.array(individual_losses)
             else:
                 individual_train_losses = np.array(individual_losses)
-
-            if ei % 95 == 0 and ei>0:
-                run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", f"{epoch}-{ei}")
-                run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", f"{epoch}-{ei}")
 
         train_loss /= len(train_loader)
         individual_train_losses /= len(train_loader)
@@ -247,7 +315,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
         individual_val_losses /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
+        print(f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
@@ -256,7 +324,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
             [os.remove(os.path.join(train_session_dir,x)) for x in os.listdir(train_session_dir) if x.endswith(".pt")]
             
-            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch+1:02d}_val{val_loss:.4f}.pt"))
+            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch:02d}_val{val_loss:.4f}.pt"))
             print(f"New best model.")
         else:
             early_stop_step += 1
@@ -265,14 +333,20 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
                 break
 
         scheduler.step(val_loss)
+        
+        new_lr = optimizer.param_groups[0]['lr']
+        if new_lr < current_lr:
+            lr_steps.append(epoch)
+            current_lr = new_lr
 
         if hasattr(model, "set_teacher_forcing_ratio"):
-            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-0.1)
+            model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-teacher_forcing_ratio_decrease)
 
         run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch)
         run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch)
 
-    plot_losses(train_losses, val_losses, train_session_dir, model_name)
+    plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name)
+    plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -286,6 +360,7 @@ def main():
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--num_heads", type=int, default=4)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=1.0)
+    parser.add_argument("--teacher_forcing_ratio_decrease", type=float, default=0.1)
     parser.add_argument("--target_coin_index", type=int, default=0)
     parser.add_argument("--num_coins", type=int, default=4)
     parser.add_argument("--coin_symbol", type=str, default="BTC")
@@ -306,6 +381,10 @@ def main():
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--optimizer_name", type=str, default="Adam")
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr_patience", type=int, default=3)
+    parser.add_argument("--lr_decrease", type=float, default=0.5)
     parser.add_argument("--early_stop_patience", type=int, default=7)
     args = parser.parse_args()
     train_with_args(args)
