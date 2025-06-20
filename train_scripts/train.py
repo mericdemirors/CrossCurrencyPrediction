@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 import matplotlib.pyplot as plt
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -15,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 
-def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight, l2_loss_weight):
+def loss(model, prediction, target, loss_name, zerp_weight, variance_weight, logic_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
     if loss_name == "MSE":
         base_loss_fn = nn.MSELoss()
@@ -58,14 +59,21 @@ def loss(model, prediction, target, loss_name, logic_loss_weight, l1_loss_weight
             l2_reg += (param ** 2).sum()
 
     # punishes the model for predicting zero, trying to push predictions away from the mean
-    weighted_mae = torch.abs(prediction - target) * torch.abs(target)
-    zero_penalty = weighted_mae.mean()
+    zero_penalty = torch.abs(prediction - target) * torch.abs(target).mean()
+    zero_penalty = torch.tensor(0., device=prediction.device)
+
+    # --- Var reward ---
+    var_open = prediction[:, 0, :].var(unbiased=False)
+    var_close = prediction[:, 1, :].var(unbiased=False)
+    var_low = prediction[:, 2, :].var(unbiased=False)
+    var_high = prediction[:, 3, :].var(unbiased=False)
+
+    variance_reward = -(var_open + var_close + var_low + var_high)
 
     # --- Final loss ---
-    total_loss = base_loss + zero_penalty + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss, [base_loss.item(), zero_penalty.item(), base_loss_open.item(), base_loss_close.item(), 
-                        base_loss_low.item(), base_loss_high.item(), (logic_loss_weight*logic_loss).item(), 
-                        (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
+    total_loss = base_loss + zerp_weight * zero_penalty + variance_reward * variance_weight + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
+    return total_loss, [base_loss.item(), base_loss_open.item(), base_loss_close.item(),  base_loss_low.item(), base_loss_high.item(), (zerp_weight*zero_penalty).item(),
+                        (variance_weight*variance_reward).item(), (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
 def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
@@ -83,9 +91,10 @@ def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_nam
     for epoch in lr_steps:
         ax.axvline(x=epoch, color='grey', linestyle='--', label='LR drop')
 
+    ax.set_xticks(np.linspace(0, len(train_losses) - 1, 4, dtype=int))
+
     # To avoid repeating the label multiple times in the legend
     handles, labels = ax.get_legend_handles_labels()
-    from collections import OrderedDict
     by_label = OrderedDict(zip(labels, handles))
     ax.legend(by_label.values(), by_label.keys())    
     
@@ -96,7 +105,7 @@ def plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_d
     plt.figure(figsize=(10, 6))
     plt.plot(weight_norms_epoch, label='Weight', color="blue")
     plt.plot(grad_norms_epoch, label='Grad', color="orange")
-    plt.xlabel('Epoch')
+    plt.xlabel('Epoch Steps')
     plt.ylabel('L2 Norm')
     plt.title(f"{model_name} - Weight and Grad Norms")
     plt.legend()
@@ -106,8 +115,8 @@ def plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_d
     plt.close()
 
 def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch):
-    plt.hist(weights, bins=100, label='Weights', alpha=0.7)
-    plt.hist(grads, bins=100, label='Grads', alpha=0.7)
+    plt.hist(weights, bins=50, label='Weights', alpha=0.7)
+    plt.hist(grads, bins=50, label='Grads', alpha=0.7)
     plt.legend()
     plt.grid(True)
     plt.title(f"{model_name} - Weight and Grad Distributions")
@@ -233,13 +242,13 @@ def train_with_args(args):
 
     train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_step_plot=args.epoch_step_plot,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
-                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease,
-                logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
+                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zerp_weight=args.zerp_weight,
+                variance_weight=args.variance_weight, logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
                 train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
 
 def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
-                logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
+                zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
                 inference_dataloaders=(None, None)):
     best_val_loss = float("inf")
     early_stop_step = 0
@@ -264,7 +273,7 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
             optimizer.zero_grad()
             output = model.call(x_batch, y_batch)
 
-            loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, y_batch, loss_name, zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
@@ -288,7 +297,7 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
 
                 plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
 
-                if ei > 0 and ei % epoch_step_plot == 0:
+                if epoch_step_plot != -1 and ei > 0 and ei % epoch_step_plot == 0:
                     model = model.eval()
                     run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(ei), epoch)
                     run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(ei), epoch)
@@ -313,7 +322,7 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
             for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
                 x_batch, y_batch = x_batch.to(device), y_batch.to(device)
                 output = model.call(x_batch, y_batch)
-                loss, individual_losses = loss_fn(model, output, y_batch, loss_name, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_losses = loss_fn(model, output, y_batch, loss_name, zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
                 
                 val_loss += loss.item()
                 if individual_val_losses is not None:
@@ -388,6 +397,8 @@ def main():
     parser.add_argument("--output_distribution", type=str, default="normal")
     parser.add_argument("--n_quantiles", type=int, default=1000)
     parser.add_argument("--loss_name", type=str, default="")
+    parser.add_argument("--zerp_weight", type=float, default=1e-3)
+    parser.add_argument("--variance_weight", type=float, default=1e-3)
     parser.add_argument("--logical_loss_weight", type=float, default=1e-3)
     parser.add_argument("--l1_loss_weight", type=float, default=1e-5)
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
