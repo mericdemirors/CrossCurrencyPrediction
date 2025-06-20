@@ -116,7 +116,7 @@ def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
     plt.ylabel('Frequency (log scale)')
     plt.yscale('log')
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f"{model_name}_epoch{epoch:02d}_weight_grad_dists_plot.png"))
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_epoch{epoch:03d}_weight_grad_dists_plot.png"))
     plt.close()
 
 def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
@@ -157,7 +157,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
         plt.legend()
 
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch:02d}.png"))
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch:03d}.png"))
     plt.close()
     model = model.train()
 
@@ -167,26 +167,30 @@ def train_with_args(args):
     "augmentation_p": args.augmentation_p, "augmentation_noise_std": args.augmentation_noise_std,
     "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "transform":0}
     val_dataset_kwargs = {"csv_path": args.val_csv_path, "coin_symbol": args.coin_symbol,
     "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_p": args.augmentation_p, "augmentation_noise_std": args.augmentation_noise_std,
     "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "transform":1}
     
     inference_train_dataset_kwargs = {"csv_path": args.train_csv_path, "coin_symbol": args.coin_symbol,
     "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_p": 0, "augmentation_noise_std": args.augmentation_noise_std,
     "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "transform":1}
     inference_val_dataset_kwargs = {"csv_path": args.val_csv_path, "coin_symbol": args.coin_symbol,
     "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_p": 0, "augmentation_noise_std": args.augmentation_noise_std,
     "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip}
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "transform":1}
     
     train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
     val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
@@ -227,14 +231,14 @@ def train_with_args(args):
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs,
+    train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_step_plot=args.epoch_step_plot,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
                 teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease,
                 logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
                 train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
 
-def train_model(model, train_loader, val_loader, epochs, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
+def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
                 logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
                 inference_dataloaders=(None, None)):
     best_val_loss = float("inf")
@@ -284,6 +288,12 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
                 plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
 
+                if ei > 0 and ei % epoch_step_plot == 0:
+                    model = model.eval()
+                    run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(ei), epoch)
+                    run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(ei), epoch)
+                    model = model.train()
+
             train_loss += loss.item()
             if individual_train_losses is not None:
                 individual_train_losses += np.array(individual_losses)
@@ -315,7 +325,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
         individual_val_losses /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
+        print(f"Epoch {epoch:03d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
@@ -324,7 +334,7 @@ def train_model(model, train_loader, val_loader, epochs, early_stop_patience, op
 
             [os.remove(os.path.join(train_session_dir,x)) for x in os.listdir(train_session_dir) if x.endswith(".pt")]
             
-            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch:02d}_val{val_loss:.4f}.pt"))
+            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch:03d}_val{val_loss:.4f}.pt"))
             print(f"New best model.")
         else:
             early_stop_step += 1
@@ -375,12 +385,15 @@ def main():
     parser.add_argument("--augment_scale_s", type=float, default=0.25)
     parser.add_argument("--distribution_scale", type=float, default=100)
     parser.add_argument("--distribution_clip", type=float, default=10)
+    parser.add_argument("--output_distribution", type=str, default="normal")
+    parser.add_argument("--n_quantiles", type=int, default=1000)
     parser.add_argument("--loss_name", type=str, default="")
     parser.add_argument("--logical_loss_weight", type=float, default=1e-3)
     parser.add_argument("--l1_loss_weight", type=float, default=1e-5)
     parser.add_argument("--l2_loss_weight", type=float, default=1e-5)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--epoch_step_plot", type=int, default=50)
     parser.add_argument("--optimizer_name", type=str, default="Adam")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr_patience", type=int, default=3)
