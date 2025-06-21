@@ -37,8 +37,10 @@ class CoinWiseCrossAttentionLSTM(nn.Module):
 
         lstm_stack = torch.stack(lstm_outputs, dim=1)
 
+        attn_mask = nn.Transformer.generate_square_subsequent_mask(self.num_coins).to(x.device)
+
         # apply attention to merged coin pipeline last features
-        attn_out, _ = self.attention(lstm_stack, lstm_stack, lstm_stack)
+        attn_out, _ = self.attention(lstm_stack, lstm_stack, lstm_stack, attn_mask=attn_mask, is_causal=True)
 
         # get the applied attention to the target coin pipeline output
         target_coin = attn_out[:, self.target_coin_index, :]

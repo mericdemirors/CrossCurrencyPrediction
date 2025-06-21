@@ -14,9 +14,6 @@ class EncoderGRU(nn.Module):
 class DecoderGRU(nn.Module):
     def __init__(self, output_features, dropout, num_layers, hidden_dim, teacher_forcing_ratio):
         super(DecoderGRU, self).__init__()
-        self.output_features = output_features
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
         self.teacher_forcing_ratio = teacher_forcing_ratio
 
         self.gru = nn.GRU(input_size=output_features, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
@@ -43,10 +40,10 @@ class DecoderGRU(nn.Module):
 class EncoderDecoderGRU(nn.Module):
     def __init__(self, input_features, output_features, output_window, dropout=0.2, num_layers=3, hidden_dim=128, teacher_forcing_ratio=1.0, target_coin_index=0):
         super(EncoderDecoderGRU, self).__init__()
-        self.encoder = EncoderGRU(input_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim)
-        self.decoder = DecoderGRU(output_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim, teacher_forcing_ratio=teacher_forcing_ratio)
-        self.output_window = output_window
+        self.encoder = EncoderGRU(input_features=input_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim)
+        self.decoder = DecoderGRU(output_features=output_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim, teacher_forcing_ratio=teacher_forcing_ratio)
         self.output_features = output_features
+        self.output_window = output_window
         self.target_coin_index = target_coin_index
         self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
@@ -64,7 +61,8 @@ class EncoderDecoderGRU(nn.Module):
         # pass it to decoder with reshaped target if presence
         
         out = self.decoder(last_x, hidden, self.output_window, target)
-        return out.permute(0, 2, 1)
+        out = out.permute(0, 2, 1)
+        return out
 
     def set_teacher_forcing_ratio(self, new_value):
         self.decoder.teacher_forcing_ratio = new_value
