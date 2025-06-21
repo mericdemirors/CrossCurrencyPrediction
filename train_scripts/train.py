@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 
-def loss(model, prediction, target, loss_name, zerp_weight, variance_weight, logic_loss_weight, l1_loss_weight, l2_loss_weight):
+def loss(model, prediction, target, loss_name, zero_weight, variance_weight, logic_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
     if loss_name == "MSE":
         base_loss_fn = nn.MSELoss()
@@ -71,8 +71,8 @@ def loss(model, prediction, target, loss_name, zerp_weight, variance_weight, log
     variance_reward = -(var_open + var_close + var_low + var_high)
 
     # --- Final loss ---
-    total_loss = base_loss + zerp_weight * zero_penalty + variance_reward * variance_weight + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss, [base_loss.item(), base_loss_open.item(), base_loss_close.item(),  base_loss_low.item(), base_loss_high.item(), (zerp_weight*zero_penalty).item(),
+    total_loss = base_loss + zero_weight * zero_penalty + variance_reward * variance_weight + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
+    return total_loss, [base_loss.item(), base_loss_open.item(), base_loss_close.item(),  base_loss_low.item(), base_loss_high.item(), (zero_weight*zero_penalty).item(),
                         (variance_weight*variance_reward).item(), (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
 def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
@@ -88,8 +88,8 @@ def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_nam
 
     # Plot vertical lines for LR drops
     ax = plt.gca()
-    for epoch in lr_steps:
-        ax.axvline(x=epoch, color='grey', linestyle='--', label='LR drop')
+    for epoch_idx in lr_steps:
+        ax.axvline(x=epoch_idx, color='grey', linestyle='--', label='LR drop')
 
     ax.set_xticks(np.linspace(0, len(train_losses) - 1, 4, dtype=int))
 
@@ -114,7 +114,7 @@ def plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_d
     plt.savefig(os.path.join(train_session_dir, f"{model_name}_weight_grad_norms_plot.png"))
     plt.close()
 
-def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch):
+def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_idx):
     plt.hist(weights, bins=50, label='Weights', alpha=0.7)
     plt.hist(grads, bins=50, label='Grads', alpha=0.7)
     plt.legend()
@@ -125,7 +125,7 @@ def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
     plt.ylabel('Frequency (log scale)')
     plt.yscale('log')
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f"{model_name}_epoch{epoch:03d}_weight_grad_dists_plot.png"))
+    plt.savefig(os.path.join(train_session_dir, f"{model_name}_epoch{epoch_idx:03d}_weight_grad_dists_plot.png"))
     plt.close()
 
 def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
@@ -150,20 +150,30 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     target_series = all_targets.permute(1, 0, 2)
     pred_series = all_predictions.permute(1, 0, 2)
 
-    target_series = torch.cat((target_series[:,:,0], target_series[:,-1]), dim=1)
-    pred_series = torch.cat((pred_series[:,:,0], pred_series[:,-1]), dim=1)
+    target_series_to_plot = torch.cat((target_series[:,:,0], target_series[:,-1]), dim=1)
+    pred_series_with_different_trusts = []
+    for trust in range(8):
+        pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:,trust], pred_series[:,-1,trust:]), dim=1))
 
     feature_names = ['Open', 'Close', 'Low', 'High']
     plt.figure(figsize=(20, 10))
 
     for i in range(4):
         plt.subplot(2, 2, i + 1)
-        plt.plot(target_series[i], label='Ground Truth', color='orange')
-        plt.plot(pred_series[i], label='Prediction', color='green')
+        
+        for trust, pred_series_to_plot in enumerate(pred_series_with_different_trusts):
+            plt.plot(pred_series_to_plot[i], label='Prediction', color='green', alpha=1/(trust+1))
+        
+        plt.plot(target_series_to_plot[i], label='Ground Truth', color='orange')
+
         plt.title(f'{feature_names[i]}')
         plt.xlabel("Time")
         plt.ylabel("Value")
         plt.legend()
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = OrderedDict(zip(reversed(labels), reversed(handles)))
+        plt.legend(by_label.values(), by_label.keys())    
 
     plt.tight_layout()
     plt.savefig(os.path.join(train_session_dir, f"{model_name}_prediction_plot_{epoch:03d}.png"))
@@ -242,14 +252,15 @@ def train_with_args(args):
 
     train_model(model=model, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_step_plot=args.epoch_step_plot,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
-                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zerp_weight=args.zerp_weight,
+                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zero_weight=args.zero_weight,
                 variance_weight=args.variance_weight, logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
-                train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader))
+                train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
+                plot_weight_grad=args.plot_weight_grad)
 
 def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
-                zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
-                inference_dataloaders=(None, None)):
+                zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn=loss, train_session_dir="",
+                inference_dataloaders=(None, None), plot_weight_grad=0):
     best_val_loss = float("inf")
     early_stop_step = 0
     model_name = model.__class__.__name__
@@ -261,47 +272,46 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
     lr_steps = []
     current_lr = optimizer.param_groups[0]['lr']
 
-    for epoch in range(epochs):
+    for epoch_idx in range(epochs):
         # --- Training ---
         model = model.train()
         train_loss = 0.0
         individual_train_losses = None
 
-        for ei, (x_batch, y_batch) in tqdm(enumerate(train_loader), desc="train_loader", leave=False):
-            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+        for batch_idx, (batch_x, batch_y) in tqdm(enumerate(train_loader), desc="train_loader", leave=False):
+            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
             optimizer.zero_grad()
-            output = model.call(x_batch, y_batch)
+            output = model.call(batch_x, batch_y)
 
-            loss, individual_losses = loss_fn(model, output, y_batch, loss_name, zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
-            with torch.no_grad():
-                weight_norms, grad_norms = [], []
-                weights, grads = [], []
+            if plot_weight_grad:
+                with torch.no_grad():
+                    weight_norms, grad_norms = [], []
+                    weights, grads = [], []
 
-                for name, param in model.named_parameters():
-                    if param.requires_grad:
-                        weight_norms.append(param.detach().norm(2).item())
-                        weights.append(param.detach().cpu().numpy().flatten()) 
-                        if param.grad is not None:
-                            grad_norms.append(param.grad.detach().norm(2).item())
-                            grads.append(param.grad.detach().cpu().numpy().flatten()) 
+                    for name, param in model.named_parameters():
+                        if param.requires_grad:
+                            weight_norms.append(param.detach().norm(2).item())
+                            weights.append(param.detach().cpu().numpy().flatten()) 
+                            if param.grad is not None:
+                                grad_norms.append(param.grad.detach().norm(2).item())
+                                grads.append(param.grad.detach().cpu().numpy().flatten()) 
 
-                weight_norms_epoch.append(sum(weight_norms) / len(weight_norms))
-                grad_norms_epoch.append(sum(grad_norms) / len(grad_norms))
+                    weight_norms_epoch.append(sum(weight_norms) / len(weight_norms))
+                    grad_norms_epoch.append(sum(grad_norms) / len(grad_norms))
 
-                weights = np.concatenate(weights)
-                grads = np.concatenate(grads)
+                    weights = np.concatenate(weights)
+                    grads = np.concatenate(grads)
 
-                plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch)
+                    plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_idx)
 
-                if epoch_step_plot != -1 and ei > 0 and ei % epoch_step_plot == 0:
-                    model = model.eval()
-                    run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(ei), epoch)
-                    run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(ei), epoch)
-                    model = model.train()
+                    if epoch_step_plot != -1 and batch_idx > 0 and batch_idx % epoch_step_plot == 0:
+                        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(batch_idx), epoch_idx)
+                        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(batch_idx), epoch_idx)
 
             train_loss += loss.item()
             if individual_train_losses is not None:
@@ -319,10 +329,11 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
         individual_val_losses = None
 
         with torch.no_grad():
-            for x_batch, y_batch in tqdm(val_loader, desc="val_loader", leave=False):
-                x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-                output = model.call(x_batch, y_batch)
-                loss, individual_losses = loss_fn(model, output, y_batch, loss_name, zerp_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            for batch_x, batch_y in tqdm(val_loader, desc="val_loader", leave=False):
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                output = model.call(batch_x, batch_y)
+
+                loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
                 
                 val_loss += loss.item()
                 if individual_val_losses is not None:
@@ -334,7 +345,7 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
         individual_val_losses /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f"Epoch {epoch:03d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
+        print(f"Epoch {epoch_idx:03d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})")
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
@@ -343,7 +354,7 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
 
             [os.remove(os.path.join(train_session_dir,x)) for x in os.listdir(train_session_dir) if x.endswith(".pt")]
             
-            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch:03d}_val{val_loss:.4f}.pt"))
+            torch.save(model.state_dict(), os.path.join(train_session_dir, f"{model_name}_epoch{epoch_idx:03d}_val{val_loss:.4f}.pt"))
             print(f"New best model.")
         else:
             early_stop_step += 1
@@ -355,17 +366,18 @@ def train_model(model, train_loader, val_loader, epochs, epoch_step_plot, early_
         
         new_lr = optimizer.param_groups[0]['lr']
         if new_lr < current_lr:
-            lr_steps.append(epoch)
+            lr_steps.append(epoch_idx)
             current_lr = new_lr
 
         if hasattr(model, "set_teacher_forcing_ratio"):
             model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-teacher_forcing_ratio_decrease)
 
-        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch)
-        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch)
+        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch_idx)
+        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch_idx)
 
     plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name)
-    plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name)
+    if plot_weight_grad:
+        plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -396,8 +408,9 @@ def main():
     parser.add_argument("--distribution_clip", type=float, default=10)
     parser.add_argument("--output_distribution", type=str, default="normal")
     parser.add_argument("--n_quantiles", type=int, default=1000)
+    parser.add_argument("--plot_weight_grad", type=int, default=0)
     parser.add_argument("--loss_name", type=str, default="")
-    parser.add_argument("--zerp_weight", type=float, default=1e-3)
+    parser.add_argument("--zero_weight", type=float, default=1e-3)
     parser.add_argument("--variance_weight", type=float, default=1e-3)
     parser.add_argument("--logical_loss_weight", type=float, default=1e-3)
     parser.add_argument("--l1_loss_weight", type=float, default=1e-5)
