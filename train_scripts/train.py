@@ -230,7 +230,7 @@ def train_with_args(args):
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    train_model(model=model, model_name=args.model_name, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_step_plot=args.epoch_step_plot,
+    train_model(model=model, model_name=args.model_name, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
                 teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zero_weight=args.zero_weight,
                 variance_weight=args.variance_weight, logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
@@ -238,7 +238,7 @@ def train_with_args(args):
                 train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
                 plot_weight_grad=args.plot_weight_grad)
 
-def train_model(model, model_name, train_loader, val_loader, epochs, epoch_step_plot, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
+def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
                 zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn, train_session_dir,
                 inference_dataloaders, plot_weight_grad):
     best_val_loss = float("inf")
@@ -284,7 +284,7 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_step_
 
                     plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_idx)
 
-                    if epoch_step_plot != -1 and batch_idx > 0 and batch_idx % epoch_step_plot == 0:
+                    if epoch_plot_step != -1 and batch_idx > 0 and batch_idx % epoch_plot_step == 0:
                         run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(batch_idx), epoch_idx)
                         run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(batch_idx), epoch_idx)
 
@@ -392,7 +392,7 @@ def main():
     parser.add_argument("--l2_loss_weight", type=float, default=0) # weight for the l2 regularization
     parser.add_argument("--batch_size", type=int, default=32) # batch size
     parser.add_argument("--epochs", type=int, default=10) # number of epochs
-    parser.add_argument("--epoch_step_plot", type=int, default=100) # whether to plo mid-epoch inference plots, if so at every what batch to do it
+    parser.add_argument("--epoch_plot_step", type=int, default=100) # whether to plo mid-epoch inference plots, if so at every what batch to do it
     parser.add_argument("--optimizer_name", type=str, default="Adam") # name of the optimizer to use
     parser.add_argument("--lr", type=float, default=1e-3) # learning rate
     parser.add_argument("--lr_patience", type=int, default=5) # patience for learning rate scheduler
