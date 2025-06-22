@@ -41,7 +41,13 @@ class TCN(nn.Module):
         self.pad = nn.ReplicationPad2d((1,1,0,0))
         self.relu = nn.ReLU()
 
+        self.upscaler1 = nn.Conv1d(in_channels=16, out_channels=64, kernel_size=3, groups=16, padding="same")
+        self.upscaler2 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=(5,5))
+        self.upscaler3 = nn.Conv2d(in_channels=128, out_channels=32, kernel_size=(5,6), dilation=(1,2), stride=(1,2))
+
     def forward(self, x):
+        res_connect = x
+
         x = self.pad(x)
         x = self.conv1d_1(x)
         x = self.bn1d_1(x)
@@ -53,6 +59,8 @@ class TCN(nn.Module):
         x = self.bn1d_2(x)
         x = self.relu(x)
         x = self.drop_2(x)
+
+        x = x + self.upscaler1(res_connect)
 
         x = self.conv1d_3(x)
         x = self.bn1d_3(x)
@@ -67,6 +75,8 @@ class TCN(nn.Module):
         x = self.bn2d_1(x)
         x = self.relu(x)
 
+        res_connect = x
+
         x = self.conv2d_2(x)
         x = self.bn2d_2(x)
         x = self.relu(x)
@@ -75,6 +85,9 @@ class TCN(nn.Module):
         x = self.bn2d_3(x)
         x = self.relu(x)
 
+        x = x + self.upscaler2(res_connect)
+        res_connect = x
+
         x = self.conv2d_4(x)
         x = self.bn2d_4(x)
         x = self.relu(x)
@@ -82,6 +95,8 @@ class TCN(nn.Module):
         x = self.conv2d_5(x)
         x = self.bn2d_5(x)
         x = self.relu(x)
+
+        x = x + self.upscaler3(res_connect)
 
         x = self.conv2d_6(x)
         x = self.bn2d_6(x)

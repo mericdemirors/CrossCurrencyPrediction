@@ -31,7 +31,6 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
         batch_size = x.size(0)
         feature_representations = []
 
-
         # pass all feature pipelines and merge their last outputs in 4 coin-wise tensors
         for i in range(self.input_features):
             feature_input = x[:, i].unsqueeze(-1)
@@ -50,10 +49,12 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
             group_outputs.append(group_pooled)
 
         groups_stack = torch.stack(group_outputs, dim=1)
+        res_connect = groups_stack
 
         # apply attention to merged coin pipelines
         attn_mask = nn.Transformer.generate_square_subsequent_mask(self.output_features).to(x.device)
         final_attn_out, _ = self.final_attention(groups_stack, groups_stack, groups_stack, attn_mask=attn_mask, is_causal=True)
+        final_attn_out = final_attn_out + res_connect
 
         # get the applied attention to the target coin pipeline output
         final_embedding = final_attn_out[:, self.target_coin_index, :]
