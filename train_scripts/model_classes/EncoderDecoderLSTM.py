@@ -20,7 +20,7 @@ class DecoderLSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=output_features, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(in_features=hidden_dim, out_features=output_features)
 
-    def forward(self, decoder_input, hidden, cell, output_window, target=None):
+    def forward(self, decoder_input, hidden, cell, output_window, target):
         outputs = []
 
         for t in range(output_window):
@@ -32,7 +32,7 @@ class DecoderLSTM(nn.Module):
 
             # if we are teacher forcing, pass the target values
             # this way we teach the model to base it's predictions to reality rather than all hallucinated outputs
-            if target is not None and torch.rand(1) < self.teacher_forcing_ratio:
+            if torch.rand(1) < self.teacher_forcing_ratio:
                 decoder_input = target[:, t].unsqueeze(1)
             else:
                 decoder_input = pred.unsqueeze(1)
@@ -40,7 +40,7 @@ class DecoderLSTM(nn.Module):
         return torch.cat(outputs, dim=1)
 
 class EncoderDecoderLSTM(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout=0.2, num_layers=3, hidden_dim=128, teacher_forcing_ratio=1.0, target_coin_index=0):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, teacher_forcing_ratio, target_coin_index):
         super(EncoderDecoderLSTM, self).__init__()
         self.encoder = EncoderLSTM(input_features=input_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim)
         self.decoder = DecoderLSTM(output_features=output_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim, teacher_forcing_ratio=teacher_forcing_ratio)
@@ -49,9 +49,8 @@ class EncoderDecoderLSTM(nn.Module):
         self.target_coin_index = target_coin_index
         self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
-    def forward(self, x, target=None):
-        if target is not None:
-            target = target.permute(0, 2, 1)
+    def forward(self, x, target):
+        target = target.permute(0, 2, 1)
 
         # get the last data from training, pass it as the decoder's input
         last_x = x[:, -1, :]

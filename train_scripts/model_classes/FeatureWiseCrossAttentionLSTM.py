@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class FeatureWiseCrossAttentionLSTM(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout=0.2, num_layers=3, hidden_dim=128, num_heads=4, target_coin_index=0):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_index):
         super().__init__()
         self.output_window = output_window
         self.output_features = output_features

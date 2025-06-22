@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, hidden_dim, dropout, max_len=1000):
+    def __init__(self, hidden_dim, dropout, max_len=1024):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
 
@@ -20,7 +20,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class EncoderDecoderTransformer(nn.Module):
-    def __init__(self, input_features, output_features, output_window,  dropout=0.2, num_layers=3, hidden_dim=128, num_heads=4, teacher_forcing_ratio=1.0, target_coin_index=0):
+    def __init__(self, input_features, output_features, output_window,  dropout, num_layers, hidden_dim, num_heads, teacher_forcing_ratio, target_coin_index):
         super().__init__()
         self.output_features = output_features
         self.output_window = output_window
@@ -37,7 +37,7 @@ class EncoderDecoderTransformer(nn.Module):
         self.pos_encoder = PositionalEncoding(hidden_dim, dropout=dropout)
         self.pos_decoder = PositionalEncoding(hidden_dim, dropout=dropout)
 
-        self.transformer = nn.Transformer(d_model=hidden_dim, nhead=num_heads, num_encoder_layers=num_layers, num_decoder_layers=num_layers, dim_feedforward=512, dropout=dropout, batch_first=True)
+        self.transformer = nn.Transformer(d_model=hidden_dim, nhead=num_heads, num_encoder_layers=num_layers, num_decoder_layers=num_layers, dim_feedforward=hidden_dim*output_features, dropout=dropout, batch_first=True)
 
     def forward_with_target(self, src, tgt):
         src = src.permute(0, 2, 1)
@@ -92,7 +92,7 @@ class EncoderDecoderTransformer(nn.Module):
         self.teacher_forcing_ratio = new_value
 
     def call(self, x, y):
-        if y is not None and torch.rand(1) < self.teacher_forcing_ratio:
+        if torch.rand(1) < self.teacher_forcing_ratio:
             output = self.forward_with_target(x, y)
         else:
             output = self.forward_without_target(x)

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class TCN(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout=0.2, device="cpu"):
+    def __init__(self, input_features, output_features, output_window, dropout, device):
         super(TCN, self).__init__()
         self.output_features = output_features
         self.output_window = output_window
