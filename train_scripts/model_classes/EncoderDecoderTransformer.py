@@ -41,15 +41,20 @@ class EncoderDecoderTransformer(nn.Module):
 
     def forward_with_target(self, src, tgt):
         src = src.permute(0, 2, 1)
+        tgt = tgt.permute(0, 2, 1)
+        
+        # shifting the target to one index right, and then putting the last input data at the first index
+        tgt = tgt.roll(1, 1)
+        # replace the first time data at every batch, with the first self.output_features values of the last time stamp of every batch
+        tgt[:,0] = src[:,-1,:self.output_features]
+
         src = self.input_proj(src) * math.sqrt(self.hidden_dim)
         src = self.pos_encoder(src)
-    
-        tgt = tgt.permute(0, 2, 1)
+
         tgt = self.output_proj(tgt) * math.sqrt(self.hidden_dim)
         tgt = self.pos_decoder(tgt)
         
         tgt_mask = nn.Transformer.generate_square_subsequent_mask(self.output_window).to(src.device)
-        
         out = self.transformer(src, tgt, tgt_mask=tgt_mask, tgt_is_causal=True)
         out = self.output_linear(out)
         
