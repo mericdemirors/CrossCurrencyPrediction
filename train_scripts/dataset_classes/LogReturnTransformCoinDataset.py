@@ -1,3 +1,4 @@
+import os
 import joblib
 import pandas as pd
 import numpy as np
@@ -7,7 +8,7 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer
 
 class LogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, output_distribution, n_quantiles, transform):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, output_distribution, n_quantiles, transform, train_session_dir):
         self.df = pd.read_csv(csv_path)
 
         # first column is open_time, so skip it
@@ -17,9 +18,9 @@ class LogReturnTransformCoinDataset(Dataset):
         if transform == 0:
             self.transform = QuantileTransformer(output_distribution=output_distribution, n_quantiles=n_quantiles, random_state=42)
             self.df[self.df.columns[1:]] = pd.DataFrame(self.transform.fit_transform(self.df[self.df.columns[1:]]), columns=self.df[self.df.columns[1:]].columns, index=self.df[self.df.columns[1:]].index)
-            joblib.dump(self.transform, "dataset_transformer.pkl")
+            joblib.dump(self.transform, os.path.join(train_session_dir,"dataset_transformer.pkl"))
         else:
-            self.transform = joblib.load("dataset_transformer.pkl")
+            self.transform = joblib.load( os.path.join(train_session_dir,"dataset_transformer.pkl"))
             self.df[self.df.columns[1:]] = pd.DataFrame(self.transform.transform(self.df[self.df.columns[1:]]), columns=self.df[self.df.columns[1:]].columns, index=self.df[self.df.columns[1:]].index)
 
         self.input_window = input_window

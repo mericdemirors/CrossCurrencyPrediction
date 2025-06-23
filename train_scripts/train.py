@@ -180,30 +180,6 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     model = model.train()
 
 def train_with_args(args):
-    base_dataset_kwargs = { "coin_symbol": args.coin_symbol, "input_window": args.input_window, "output_window": args.output_window,
-    "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
-    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
-    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles}
-    
-    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "transform":0}
-    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "transform":1}
-    
-    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "transform":1}
-    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "transform":1}
-    
-    train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
-    val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
-    
-    inference_train_dataset = import_dataset(args.dataset_name, **inference_train_dataset_kwargs)
-    inference_val_dataset = import_dataset(args.dataset_name, **inference_val_dataset_kwargs)
-
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-    
-    inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False)
-    inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False)
-
     model_kwargs = {"input_features": args.input_features, "output_features": args.output_features,
     "input_window": args.input_window, "output_window": args.output_window,
     "dropout": args.dropout, "num_layers": args.num_layers,
@@ -228,6 +204,30 @@ def train_with_args(args):
 
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
+
+    base_dataset_kwargs = { "coin_symbol": args.coin_symbol, "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
+    
+    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "transform":0}
+    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "transform":1}
+    
+    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "transform":1}
+    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "transform":1}
+    
+    train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
+    val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
+    
+    inference_train_dataset = import_dataset(args.dataset_name, **inference_train_dataset_kwargs)
+    inference_val_dataset = import_dataset(args.dataset_name, **inference_val_dataset_kwargs)
+
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    
+    inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False)
+    inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False)
 
     train_model(model=model, model_name=args.model_name, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
