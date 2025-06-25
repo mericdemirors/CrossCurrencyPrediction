@@ -5,22 +5,26 @@ import numpy as np
 
 import torch
 from torch.utils.data import Dataset
-from sklearn.preprocessing import QuantileTransformer
+from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class LogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, output_distribution, n_quantiles, transform, train_session_dir):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, load_transform, train_session_dir):
         self.df = pd.read_csv(csv_path)
 
         # first column is open_time, so skip it
         start, end  = {'BTC': (1, 5), 'ETH': (5, 9), 'BNB': (9, 13), 'XRP': (13, 17)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 
-        if transform == 0:
-            self.transform = QuantileTransformer(output_distribution=output_distribution, n_quantiles=n_quantiles, random_state=42)
+        if load_transform == 0:
+            if transform_name == "QuantileTransformer":
+                self.transform = QuantileTransformer(output_distribution=output_distribution, n_quantiles=n_quantiles, random_state=42)
+            elif transform_name == "PowerTransformer":
+                self.transform = PowerTransformer(method="yeo-johnson")
+
             self.df[self.df.columns[1:]] = pd.DataFrame(self.transform.fit_transform(self.df[self.df.columns[1:]]), columns=self.df[self.df.columns[1:]].columns, index=self.df[self.df.columns[1:]].index)
-            joblib.dump(self.transform, os.path.join(train_session_dir,"dataset_transformer.pkl"))
+            joblib.dump(self.transform, os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
         else:
-            self.transform = joblib.load( os.path.join(train_session_dir,"dataset_transformer.pkl"))
+            self.transform = joblib.load( os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
             self.df[self.df.columns[1:]] = pd.DataFrame(self.transform.transform(self.df[self.df.columns[1:]]), columns=self.df[self.df.columns[1:]].columns, index=self.df[self.df.columns[1:]].index)
 
         self.input_window = input_window

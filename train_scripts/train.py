@@ -208,14 +208,14 @@ def train_with_args(args):
     base_dataset_kwargs = { "coin_symbol": args.coin_symbol, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
-    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip,
+    "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip, "transform_name":args.transform_name,
     "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
-    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "transform":0}
-    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "transform":1}
+    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "load_transform":0}
+    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "load_transform":1}
     
-    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "transform":1}
-    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "transform":1}
+    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "load_transform":1}
+    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "load_transform":1}
     
     train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
     val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
@@ -380,6 +380,7 @@ def main():
     parser.add_argument("--augment_scale_s", type=float, default=0) # min max limit for the scale to be multiplied with all samples
     parser.add_argument("--distribution_scale", type=float, default=100) # scale to multiply the log returns with (only for the LogReturnCoinDataset dataset)
     parser.add_argument("--distribution_clip", type=float, default=10) # scale to clip the log returns' both sides with (only for the LogReturnCoinDataset dataset)
+    parser.add_argument("--transform_name", type=str, default="QuantileTransformer") # sklearn.preprocessing QuantileTransformer or PowerTransformer to use
     parser.add_argument("--output_distribution", type=str, default="normal") # sklearn.preprocessing QuantileTransformer distribution type (only for the LogReturnTransformCoinDataset dataset)
     parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles (only for the LogReturnTransformCoinDataset dataset)
     parser.add_argument("--plot_weight_grad", type=int, default=0) # whether to plot weight and gradient plots at each epoch
