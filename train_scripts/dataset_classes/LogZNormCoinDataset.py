@@ -6,10 +6,10 @@ import torch
 from torch.utils.data import Dataset
 
 class LogZNormCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, train_session_dir, train_dataset):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
         
-        if train_dataset:
+        if training_dataset:
             self.df = np.log(self.df + 0.00000001)
             train_col_means, train_col_stds = self.df.mean(), self.df.std()
             self.df = (self.df - train_col_means) / (train_col_stds + 0.00000001)

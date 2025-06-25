@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class LogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, train_dataset):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
         self.df = np.log(self.df.shift(-1) / self.df)
@@ -18,7 +18,7 @@ class LogReturnTransformCoinDataset(Dataset):
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 
-        if train_dataset:
+        if training_dataset:
             if transform_name == "QuantileTransformer":
                 self.transform = QuantileTransformer(output_distribution=output_distribution, n_quantiles=n_quantiles, random_state=42)
             elif transform_name == "PowerTransformer":
@@ -60,7 +60,7 @@ class LogReturnTransformCoinDataset(Dataset):
         y_pred_full = np.zeros((price.shape[0], 16))
         y_pred_full[:, :4] = price
         y_pred_inversed = self.transform.inverse_transform(y_pred_full)
-        y_pred_rescaled = y_pred_inversed[:, :4]
+        y_pred_rescaled = torch.tensor(y_pred_inversed[:, :4])
 
         price_full = np.zeros((price.shape[0], 16))
         price_full[:, :4] = price

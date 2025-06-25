@@ -151,7 +151,6 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
     pred_series = all_predictions.permute(1, 0, 2)
     
     if save:
-        torch.save(target_series, os.path.join(train_session_dir, f'{model_name}_target_series.pt'))
         torch.save(pred_series, os.path.join(train_session_dir, f'{model_name}_pred_series.pt'))
 
     target_series_to_plot = torch.cat((target_series[:,:,0], target_series[:,-1]), dim=1)
@@ -211,15 +210,14 @@ def train_with_args(args):
 
     base_dataset_kwargs = { "coin_symbol": args.coin_symbol, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
-    "z_norm_means_csv_path": args.z_norm_means_csv_path, "z_norm_stds_csv_path": args.z_norm_stds_csv_path,
     "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip, "transform_name":args.transform_name,
     "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
-    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "train_dataset":1}
-    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "train_dataset":0}
+    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":1}
+    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":0}
     
-    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "train_dataset":1}
-    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "train_dataset":0}
+    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "training_dataset":1}
+    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "training_dataset":0}
     
     train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
     val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
@@ -376,8 +374,6 @@ def main():
     parser.add_argument("--dataset_name", type=str, default="") # name of the dataset to use
     parser.add_argument("--train_csv_path", type=str, default="") # csv path to load for training dataset
     parser.add_argument("--val_csv_path", type=str, default="") # csv path to load for validation dataset
-    parser.add_argument("--z_norm_means_csv_path", type=str, default="") # mean values to reverse the z_normalization (only for the LogZNormCoinDataset dataset)
-    parser.add_argument("--z_norm_stds_csv_path", type=str, default="") # std values to reverse the z_normalization (only for the LogZNormCoinDataset dataset)
     parser.add_argument("--augmentation_p", type=float, default=0) # probability of a sample being augmented (also the probability of each augmentation being applied to that sample)
     parser.add_argument("--augmentation_noise_std", type=float, default=0) # std for the gaussian noise augmentation
     parser.add_argument("--augment_constant_c", type=float, default=0) # min max limit for the constant to be added to all samples
