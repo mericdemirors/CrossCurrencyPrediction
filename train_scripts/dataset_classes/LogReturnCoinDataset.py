@@ -6,12 +6,16 @@ from torch.utils.data import Dataset
 
 class LogReturnCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, distribution_scale, distribution_clip):
-        self.df = pd.read_csv(csv_path)
-        self.df[self.df.columns[1:]] = self.df[self.df.columns[1:]] * distribution_scale
-        self.df[self.df.columns[1:]] = self.df[self.df.columns[1:]].clip(-distribution_clip, distribution_clip)
+        self.df = pd.read_csv(csv_path, index_col="open_time")
+
+        self.df = np.log(self.df.shift(-1) / self.df)
+        self.df.dropna(inplace=True)
+
+        self.df = self.df * distribution_scale
+        self.df = self.df.clip(-distribution_clip, distribution_clip)
 
         # first column is open_time, so skip it
-        start, end  = {'BTC': (1, 5), 'ETH': (5, 9), 'BNB': (9, 13), 'XRP': (13, 17)}[coin_symbol]
+        start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 
         self.input_window = input_window
@@ -31,7 +35,7 @@ class LogReturnCoinDataset(Dataset):
         prediction_rows = self.df.iloc[idx + self.input_window:idx + self.input_window + self.output_window]
 
         # first 4 columns are BTC_open/close/low_high, and then same 4 for each ETH, BNB, XRP. Each column is a timestamp
-        analysis_matrix = analysis_rows[analysis_rows.columns[1:]].to_numpy()
+        analysis_matrix = analysis_rows[analysis_rows.columns].to_numpy()
         prediction_target = prediction_rows[self.coin_cols].to_numpy()
 
         x, y = analysis_matrix.T, prediction_target.T

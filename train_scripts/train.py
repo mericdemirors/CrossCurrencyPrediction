@@ -128,7 +128,7 @@ def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_
     plt.savefig(os.path.join(train_session_dir, f'{model_name}_epoch{epoch_idx:03d}_weight_grad_dists_plot.png'))
     plt.close()
 
-def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
+def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_idx, save=False):
     model = model.eval()
     all_targets = []
     all_predictions = []
@@ -149,6 +149,10 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
     # Reshape into full time series: [n, 4, 8] -> [4, n, 8]
     target_series = all_targets.permute(1, 0, 2)
     pred_series = all_predictions.permute(1, 0, 2)
+    
+    if save:
+        torch.save(target_series, os.path.join(train_session_dir, f'{model_name}_target_series.pt'))
+        torch.save(pred_series, os.path.join(train_session_dir, f'{model_name}_pred_series.pt'))
 
     target_series_to_plot = torch.cat((target_series[:,:,0], target_series[:,-1]), dim=1)
     pred_series_with_different_trusts = []
@@ -175,7 +179,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch):
         plt.legend(by_label.values(), by_label.keys())    
 
     plt.tight_layout()
-    plt.savefig(os.path.join(train_session_dir, f'{model_name}_prediction_plot_{epoch:03d}.png'))
+    plt.savefig(os.path.join(train_session_dir, f'{model_name}_prediction_plot_{epoch_idx:03d}.png'))
     plt.close()
     model = model.train()
 
@@ -211,11 +215,11 @@ def train_with_args(args):
     "distribution_scale": args.distribution_scale, "distribution_clip": args.distribution_clip, "transform_name":args.transform_name,
     "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
-    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "load_transform":0}
-    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "load_transform":1}
+    train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "train_dataset":1}
+    val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "train_dataset":0}
     
-    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "load_transform":1}
-    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "load_transform":1}
+    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "train_dataset":1}
+    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "train_dataset":0}
     
     train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
     val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
@@ -284,8 +288,8 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
                     plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_idx)
 
                     if epoch_plot_step != -1 and batch_idx > 0 and batch_idx % epoch_plot_step == 0:
-                        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train_mid_step_" + str(batch_idx), epoch_idx)
-                        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val_mid_step_" + str(batch_idx), epoch_idx)
+                        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train_mid_step_{batch_idx}', epoch_idx, epochs)
+                        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val_mid_step_{batch_idx}', epoch_idx, epochs)
 
             train_loss += loss.item()
             if individual_train_losses is not None:
@@ -345,8 +349,8 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
         if hasattr(model, "set_teacher_forcing_ratio"):
             model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-teacher_forcing_ratio_decrease)
 
-        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, model_name + "_train", epoch_idx)
-        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, model_name + "_val", epoch_idx)
+        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train', epoch_idx, save=(early_stop_step==0))
+        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val', epoch_idx, save=(early_stop_step==0))
 
     plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name)
     

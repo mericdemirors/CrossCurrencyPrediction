@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 
@@ -5,11 +6,27 @@ import torch
 from torch.utils.data import Dataset
 
 class LogZNormCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, z_norm_means_csv_path, z_norm_stds_csv_path):
-        self.df = pd.read_csv(csv_path)
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, train_session_dir, train_dataset):
+        self.df = pd.read_csv(csv_path, index_col="open_time")
         
+        if train_dataset:
+            self.df = np.log(self.df + 0.00000001)
+            train_col_means, train_col_stds = self.df.mean(), self.df.std()
+            self.df = (self.df - train_col_means) / (train_col_stds + 0.00000001)
+            
+            self.train_col_means_df = pd.DataFrame(train_col_means).T
+            self.train_col_stds_df = pd.DataFrame(train_col_stds).T
+            self.train_col_means_df.to_csv(os.path.join(train_session_dir, "z_norm_means.csv"), index=False)
+            self.train_col_stds_df.to_csv(os.path.join(train_session_dir, "z_norm_stds.csv"), index=False)
+        else:
+            self.train_col_means_df = pd.read_csv(os.path.join(train_session_dir, "z_norm_means.csv"))
+            self.train_col_stds_df = pd.read_csv(os.path.join(train_session_dir, "z_norm_stds.csv"))
+
+            self.df = np.log(self.df + 0.00000001)
+            self.df.sub(self.train_col_means_df.iloc[0, :]).div(self.train_col_stds_df + 0.00000001)
+
         # first column is open_time, so skip it
-        start, end  = {'BTC': (1, 5), 'ETH': (5, 9), 'BNB': (9, 13), 'XRP': (13, 17)}[coin_symbol]
+        start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 
         self.input_window = input_window
@@ -20,9 +37,6 @@ class LogZNormCoinDataset(Dataset):
         self.augment_constant_c = augment_constant_c
         self.augment_scale_s = augment_scale_s
 
-        self.z_norm_means_df = pd.read_csv(z_norm_means_csv_path)
-        self.z_norm_stds_df = pd.read_csv(z_norm_stds_csv_path)
-
     def __len__(self):
         return len(self.df) - self.input_window - self.output_window + 1
 
@@ -31,7 +45,7 @@ class LogZNormCoinDataset(Dataset):
         prediction_rows = self.df.iloc[idx + self.input_window : idx + self.input_window + self.output_window]
 
         # first 4 columns are BTC_open/close/low_high, and then same 4 for each ETH, BNB, XRP. Each column is a timestamp
-        analysis_matrix = analysis_rows[analysis_rows.columns[1:]].to_numpy()
+        analysis_matrix = analysis_rows[analysis_rows.columns].to_numpy()
         prediction_target = prediction_rows[self.coin_cols].to_numpy()
 
         x,y = analysis_matrix.T, prediction_target.T
@@ -42,10 +56,10 @@ class LogZNormCoinDataset(Dataset):
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
     def rescale_to_real_price(self, price):
-        means = self.z_norm_means_df[self.coin_cols].to_numpy()
-        stds = self.z_norm_stds_df[self.coin_cols].to_numpy()
+        means = self.train_col_means_df[self.coin_cols].to_numpy()
+        stds = self.train_col_stds_df[self.coin_cols].to_numpy()
         
-        real_price = np.power(10, price * stds + means)
+        real_price = np.exp(price * stds + means)
 
         return real_price
 
