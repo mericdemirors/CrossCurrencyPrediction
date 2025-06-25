@@ -53,13 +53,27 @@ class LogReturnTransformCoinDataset(Dataset):
 
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-    def rescale_to_real_price(self, price):           
+    def rescale_to_real_price(self, price, initial_prices):
         y_pred_full = np.zeros((16, price.shape[1]))
         y_pred_full[:4, :] = price
         y_pred_inversed = self.transform.inverse_transform(y_pred_full.T)
         y_pred_rescaled = y_pred_inversed[:, :4]
 
-        return y_pred_rescaled
+
+        price_full = np.zeros((price.shape[0], 16))
+        price_full[:, :4] = price
+        
+        price_full_inverted = self.transform.inverse_transform(price_full)
+        price_inverted = torch.tensor(price_full_inverted[:, :4])
+
+        real_price = torch.zeros((price_inverted.shape[0] + 1, price_inverted.shape[1]))
+        real_price[0] = initial_prices
+
+        for t in range(y_pred_rescaled.shape[0]):
+            real_price[t + 1] = real_price[t] * torch.exp(y_pred_rescaled[t])
+        real_price = real_price[1:]
+
+        return real_price
 
     def augment(self, x):
         if torch.rand(1) < self.augmentation_p:

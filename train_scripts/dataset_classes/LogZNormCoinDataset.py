@@ -45,10 +45,10 @@ class LogZNormCoinDataset(Dataset):
         means = self.z_norm_means_df[self.coin_cols].to_numpy()
         stds = self.z_norm_stds_df[self.coin_cols].to_numpy()
         
-        real_price = np.power(10, price.T * stds + means)        
-        
-        return real_price.T
-    
+        real_price = np.power(10, price * stds + means)
+
+        return real_price
+
     def augment(self, x):
         if torch.rand(1) < self.augmentation_p:
             x = x + np.random.normal(scale=self.augmentation_noise_std, size=x.shape)

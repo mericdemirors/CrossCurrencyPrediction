@@ -41,6 +41,18 @@ class LogReturnCoinDataset(Dataset):
 
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
+    def rescale_to_real_price(self, price, initial_prices):
+        price = price / self.distribution_scale
+        
+        real_price = torch.zeros((price.shape[0] + 1, price.shape[1]))
+        real_price[0] = initial_prices
+
+        for t in range(price.shape[0]):
+            real_price[t + 1] = real_price[t] * torch.exp(price[t])
+        real_price = real_price[1:]
+
+        return real_price
+
     def augment(self, x):
         if torch.rand(1) < self.augmentation_p:
             x = x + np.random.normal(loc=0.0, scale=self.augmentation_noise_std, size=x.shape)
