@@ -11,7 +11,7 @@ class LogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        self.df = np.log(self.df.shift(-1) / self.df)
+        self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
         # first column is open_time, so skip it

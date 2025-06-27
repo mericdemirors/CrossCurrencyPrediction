@@ -7,6 +7,8 @@ from torch.utils.data import Dataset
 
 class LogZNormCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, train_session_dir, training_dataset):
+        print("THIS DATASET IS NOT RECOMMENDED, IT CREATES A DISTRIBUTION SHIFT BETWEEN TRAINING AND VALIDATION PARTITIONS SINCE COIN PRICES ARE SO HIGH TOWARDS THE END")
+        raise ZeroDivisionError("You should not use this dataset")
         self.df = pd.read_csv(csv_path, index_col="open_time")
         
         if training_dataset:

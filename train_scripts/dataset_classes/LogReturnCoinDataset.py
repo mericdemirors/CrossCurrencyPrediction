@@ -8,7 +8,7 @@ class LogReturnCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, distribution_scale, distribution_clip):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        self.df = np.log(self.df.shift(-1) / self.df)
+        self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
         self.df = self.df * distribution_scale
@@ -46,7 +46,7 @@ class LogReturnCoinDataset(Dataset):
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
     def rescale_to_real_price(self, price, initial_prices):
-        price = price / self.distribution_scale
+        price = torch.tensor(price / self.distribution_scale)
         
         real_price = torch.zeros((price.shape[0] + 1, price.shape[1]))
         real_price[0] = initial_prices
