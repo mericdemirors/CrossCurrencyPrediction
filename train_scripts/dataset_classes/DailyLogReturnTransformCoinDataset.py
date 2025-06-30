@@ -7,12 +7,36 @@ import torch
 from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
-class LogReturnTransformCoinDataset(Dataset):
+class DailyLogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        self.df = np.log(self.df / self.df.shift(1))
-        self.df.dropna(inplace=True)
+        self.df.loc[:, "BTC_low"] = np.log(self.df["BTC_low"] / self.df["BTC_open"])
+        self.df.loc[:, "BTC_high"] = np.log(self.df["BTC_high"] / self.df["BTC_open"])
+        self.df.loc[:, "BTC_close"] = np.log(self.df["BTC_close"] / self.df["BTC_open"])
+
+        self.df.loc[:, "ETH_low"] = np.log(self.df["ETH_low"] / self.df["ETH_open"])
+        self.df.loc[:, "ETH_high"] = np.log(self.df["ETH_high"] / self.df["ETH_open"])
+        self.df.loc[:, "ETH_close"] = np.log(self.df["ETH_close"] / self.df["ETH_open"])
+
+        self.df.loc[:, "BNB_low"] = np.log(self.df["BNB_low"] / self.df["BNB_open"])
+        self.df.loc[:, "BNB_high"] = np.log(self.df["BNB_high"] / self.df["BNB_open"])
+        self.df.loc[:, "BNB_close"] = np.log(self.df["BNB_close"] / self.df["BNB_open"])
+
+        self.df.loc[:, "XRP_low"] = np.log(self.df["XRP_low"] / self.df["XRP_open"])
+        self.df.loc[:, "XRP_high"] = np.log(self.df["XRP_high"] / self.df["XRP_open"])
+        self.df.loc[:, "XRP_close"] = np.log(self.df["XRP_close"] / self.df["XRP_open"])
+
+        btc_open = self.df["BTC_open"].values
+        self.df.iloc[1:, self.df.columns.get_loc("BTC_open")] = np.log(btc_open[1:] / (btc_open[:-1]))
+        eth_open = self.df["ETH_open"].values
+        self.df.iloc[1:, self.df.columns.get_loc("ETH_open")] = np.log(eth_open[1:] / (eth_open[:-1]))
+        bnb_open = self.df["BNB_open"].values
+        self.df.iloc[1:, self.df.columns.get_loc("BNB_open")] = np.log(bnb_open[1:] / (bnb_open[:-1]))
+        xrp_open = self.df["XRP_open"].values
+        self.df.iloc[1:, self.df.columns.get_loc("XRP_open")] = np.log(xrp_open[1:] / (xrp_open[:-1]))
+
+        self.df = self.df.iloc[1:]
 
         # first column is open_time, so skip it
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
@@ -66,7 +90,8 @@ class LogReturnTransformCoinDataset(Dataset):
         real_price[0] = initial_prices
 
         for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
-            real_price[t + 1] = real_price[t] * torch.exp(price_with_zero_cols_inverted_only_coin[t])
+            real_price[t + 1, 0] = real_price[t, 0] * torch.exp(price_with_zero_cols_inverted_only_coin[t, 0])
+            real_price[t + 1, 1:] = real_price[t + 1, 0] * torch.exp(price_with_zero_cols_inverted_only_coin[t, 1:])
         real_price = real_price[1:]
 
         return real_price
