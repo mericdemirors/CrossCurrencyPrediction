@@ -16,7 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 
-def loss(model, prediction, target, loss_name, zero_weight, variance_weight, logic_loss_weight, l1_loss_weight, l2_loss_weight):
+def loss(model, prediction, target, loss_name, zero_weight, variance_weight, logic_loss_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight):
     # --- Base loss ---
     if loss_name == "MSE":
         base_loss_fn = nn.MSELoss()
@@ -50,6 +50,18 @@ def loss(model, prediction, target, loss_name, zero_weight, variance_weight, log
 
     logic_loss = (high_low + open_low + open_high + close_low + close_high).mean()
 
+    # --- low high constraints ---
+    low = prediction[:, 2, :]
+    high = prediction[:, 3, :]
+
+    # low should be non-positive, so we are punishing the positive parts
+    positive_low = torch.relu(low)
+
+    # high should be non-negative, so we are punishing the negative parts
+    negative_high = torch.relu(-1 * high)
+
+    low_high_loss = (negative_high + positive_low).mean()
+
     # regularization
     l1_reg = torch.tensor(0., device=prediction.device)
     l2_reg = torch.tensor(0., device=prediction.device)
@@ -71,9 +83,9 @@ def loss(model, prediction, target, loss_name, zero_weight, variance_weight, log
     variance_reward = -(var_open + var_close + var_low + var_high)
 
     # --- Final loss ---
-    total_loss = base_loss + zero_weight * zero_penalty + variance_reward * variance_weight + logic_loss_weight * logic_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
+    total_loss = base_loss + zero_weight * zero_penalty + variance_reward * variance_weight + logic_loss_weight * logic_loss + low_high_loss_weight * low_high_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
     return total_loss, [base_loss.item(), base_loss_open.item(), base_loss_close.item(),  base_loss_low.item(), base_loss_high.item(), (zero_weight*zero_penalty).item(),
-                        (variance_weight*variance_reward).item(), (logic_loss_weight*logic_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
+                        (variance_weight*variance_reward).item(), (logic_loss_weight*logic_loss).item(), (low_high_loss_weight * low_high_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
 
 def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
@@ -234,13 +246,13 @@ def train_with_args(args):
     train_model(model=model, model_name=args.model_name, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
                 teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zero_weight=args.zero_weight,
-                variance_weight=args.variance_weight, logical_loss_weight=args.logical_loss_weight, l1_loss_weight=args.l1_loss_weight,
+                variance_weight=args.variance_weight, logical_loss_weight=args.logical_loss_weight, low_high_loss_weight=args.low_high_loss_weight, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
                 train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
                 plot_weight_grad=args.plot_weight_grad)
 
 def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
-                zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn, train_session_dir,
+                zero_weight, variance_weight, logical_loss_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn, train_session_dir,
                 inference_dataloaders, plot_weight_grad):
     best_val_loss = float("inf")
     early_stop_step = 0
@@ -260,7 +272,7 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
             optimizer.zero_grad()
             output = model.call(batch_x, batch_y)
 
-            loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight)
             loss.backward()
             optimizer.step()
 
@@ -308,7 +320,7 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
                 batch_x, batch_y = batch_x.to(device), batch_y.to(device)
                 output = model.call(batch_x, batch_y)
 
-                loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, logical_loss_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight)
                 
                 val_loss += loss.item()
                 if individual_val_losses is not None:
@@ -388,6 +400,7 @@ def main():
     parser.add_argument("--zero_weight", type=float, default=0) # weight of the loss penalizing the wrong zero predictions
     parser.add_argument("--variance_weight", type=float, default=0) # weight of the reward for high variance
     parser.add_argument("--logical_loss_weight", type=float, default=0) # weight of the custom logical loss (only for the LogZNormCoinDataset dataset)
+    parser.add_argument("--low_high_loss_weight", type=float, default=0) # weight of the custom low high loss (only for the DailyLogReturnTransformLowHighRootCoinDataset dataset)
     parser.add_argument("--l1_loss_weight", type=float, default=0) # weight for the l1 regularization
     parser.add_argument("--l2_loss_weight", type=float, default=0) # weight for the l2 regularization
     parser.add_argument("--batch_size", type=int, default=32) # batch size
