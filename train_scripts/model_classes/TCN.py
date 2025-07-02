@@ -9,14 +9,14 @@ class TCN(nn.Module):
         self.device = device
 
         # first part with the conv1d layers, this layers capture the intra-feature correlations
-        self.conv1d_1 = nn.Conv1d(in_channels=input_features, out_channels=32, kernel_size=3, groups=input_features)
-        self.bn1d_1 = nn.BatchNorm1d(32)
+        self.conv1d_1 = nn.Conv1d(in_channels=input_features, out_channels=input_features*2, kernel_size=3, groups=input_features)
+        self.bn1d_1 = nn.BatchNorm1d(input_features*2)
         self.drop_1 = nn.Dropout1d(dropout)
-        self.conv1d_2 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, groups=32)
-        self.bn1d_2 = nn.BatchNorm1d(64)
+        self.conv1d_2 = nn.Conv1d(in_channels=input_features*2, out_channels=input_features*4, kernel_size=3, groups=input_features*2)
+        self.bn1d_2 = nn.BatchNorm1d(input_features*4)
         self.drop_2 = nn.Dropout1d(dropout)
-        self.conv1d_3 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, groups=64)
-        self.bn1d_3 = nn.BatchNorm1d(128)
+        self.conv1d_3 = nn.Conv1d(in_channels=input_features*4, out_channels=input_features*8, kernel_size=3, groups=input_features*4)
+        self.bn1d_3 = nn.BatchNorm1d(input_features*8)
         self.drop_3 = nn.Dropout1d(dropout)
 
         # second part with the conv2d layers, this layers capture the inter-feature correlations
@@ -41,7 +41,7 @@ class TCN(nn.Module):
         self.pad = nn.ReplicationPad2d((1,1,0,0))
         self.relu = nn.ReLU()
 
-        self.upscaler1 = nn.Conv1d(in_channels=16, out_channels=64, kernel_size=3, groups=16, padding="same")
+        self.upscaler1 = nn.Conv1d(in_channels=input_features, out_channels=input_features*4, kernel_size=3, groups=input_features, padding="same")
         self.upscaler2 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=(5,5))
         self.upscaler3 = nn.Conv2d(in_channels=128, out_channels=32, kernel_size=(5,6), dilation=(1,2), stride=(1,2))
 

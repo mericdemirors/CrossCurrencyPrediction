@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 
 class FeatureWiseCrossAttentionLSTM(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_index):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_index, num_coins):
         super().__init__()
         self.output_window = output_window
         self.output_features = output_features
         self.input_features = input_features
-        self.num_groups = self.input_features // self.output_features
+        self.num_coins = num_coins
         self.target_coin_index = target_coin_index
 
         # one LSTM per coin feature
@@ -19,7 +19,7 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
         # one attention to merge each coins' feature pipelines
         self.group_attentions = nn.ModuleList([
             nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, batch_first=True, dropout=dropout)
-            for _ in range(self.num_groups)
+            for _ in range(self.num_coins)
         ])
 
         # attention to merge coin pipelines
@@ -41,9 +41,9 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
 
         # pass coin tensors into attentions and get 4 attentions outputs
         group_outputs = []
-        for i in range(self.num_groups):
-            group = features_stack[:, i * self.output_features:(i + 1) * self.output_features]  # [batch, 4, hidden_dim]
-            attn_mask = nn.Transformer.generate_square_subsequent_mask(self.num_groups).to(x.device)
+        for i in range(self.num_coins):
+            group = features_stack[:, i * self.input_features//self.num_coins:(i + 1) * self.input_features//self.num_coins]  # [batch, 4, hidden_dim]
+            attn_mask = nn.Transformer.generate_square_subsequent_mask(self.input_features//self.num_coins).to(x.device)
             attn_out, _ = self.group_attentions[i](group, group, group, attn_mask=attn_mask, is_causal=True)
             group_pooled = attn_out.mean(dim=1)
             group_outputs.append(group_pooled)
