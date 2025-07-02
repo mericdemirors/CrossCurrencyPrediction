@@ -14,7 +14,6 @@ class LogReturnCoinDataset(Dataset):
         self.df = self.df * distribution_scale
         self.df = self.df.clip(-distribution_clip, distribution_clip)
 
-        # first column is open_time, so skip it
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 

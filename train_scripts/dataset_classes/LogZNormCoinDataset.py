@@ -27,7 +27,6 @@ class LogZNormCoinDataset(Dataset):
             self.df = np.log(self.df + 0.00000001)
             self.df.sub(self.train_col_means_df.iloc[0, :]).div(self.train_col_stds_df + 0.00000001)
 
-        # first column is open_time, so skip it
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 

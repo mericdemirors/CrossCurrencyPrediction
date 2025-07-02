@@ -14,7 +14,6 @@ class LogReturnTransformCoinDataset(Dataset):
         self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
-        # first column is open_time, so skip it
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 

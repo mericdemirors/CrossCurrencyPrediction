@@ -38,7 +38,6 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
 
         self.df = self.df.iloc[1:]
 
-        # first column is open_time, so skip it
         start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
         self.coin_cols = self.df.columns[start: end]
 
