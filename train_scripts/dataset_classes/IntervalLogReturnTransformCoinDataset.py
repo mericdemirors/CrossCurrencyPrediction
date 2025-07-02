@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
-class DailyLogReturnTransformCoinDataset(Dataset):
+class IntervalLogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
