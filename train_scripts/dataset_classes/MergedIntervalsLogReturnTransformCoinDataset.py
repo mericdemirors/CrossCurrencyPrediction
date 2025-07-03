@@ -8,15 +8,24 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
+    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset, add_secondary_low_high):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
         coins = ['BTC', 'ETH', 'BNB', 'XRP']
 
         for coin in coins:
-            lows = self.df[f'{coin}_low'].values
-            highs = self.df[f'{coin}_high'].values
+            open_data = self.df[f'{coin}_open'].values
+            close_data = self.df[f'{coin}_close'].values
+            low_data = self.df[f'{coin}_low'].values
+            high_col = self.df[f'{coin}_high'].values
 
+            opens = []
+            mids = []
+            closes = []
+            lows = []
+            secondary_lows = []
+            highs = []
+            secondary_highs = []
             trajectory = []
             stability = []
 
@@ -25,12 +34,19 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
                 if row_i == 0:
                     break
                 if i % 2 == 1:
+                    opens.append(None)
+                    mids.append(None)
+                    closes.append(None)
+                    lows.append(None)
+                    highs.append(None)
+                    secondary_lows.append(None)
+                    secondary_highs.append(None)
                     trajectory.append(None)
                     stability.append(None)
                     continue
                 
-                low1, high1 = lows[row_i-1], highs[row_i-1]
-                low2, high2 = lows[row_i], highs[row_i]
+                low1, high1 = low_data[row_i-1], high_col[row_i-1]
+                low2, high2 = low_data[row_i], high_col[row_i]
 
                 lowest_low = min(low1, low2)
                 highest_high = max(high1, high2)
@@ -46,20 +62,53 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
                     stab = -1 # less stabil
                 else:
                     stab = 1 # more stabil
-
+                
+                opens.append(open_data[row_i-1])
+                mids.append((close_data[row_i-1] + open_data[row_i])/2)
+                closes.append(close_data[row_i])
+                lows.append(lowest_low)
+                highs.append(highest_high)
+                secondary_lows.append(low1 + low2 - lowest_low)
+                secondary_highs.append(high1 + high2 - highest_high)
                 trajectory.append(traj)
                 stability.append(stab)
 
             # None to match original length
+            while len(opens) < len(self.df):
+                opens.append(None)
+            while len(mids) < len(self.df):
+                mids.append(None)
+            while len(closes) < len(self.df):
+                closes.append(None)
+            while len(lows) < len(self.df):
+                lows.append(None)
+            while len(highs) < len(self.df):
+                highs.append(None)
+            while len(secondary_lows) < len(self.df):
+                secondary_lows.append(None)
+            while len(secondary_highs) < len(self.df):
+                secondary_highs.append(None)
             while len(trajectory) < len(self.df):
                 trajectory.append(None)
             while len(stability) < len(self.df):
                 stability.append(None)
 
+            self.df[f'{coin}_open'] = list(reversed(opens))
+            self.df[f'{coin}_mid'] = list(reversed(mids))
+            self.df[f'{coin}_close'] = list(reversed(closes))
+            self.df[f'{coin}_low'] = list(reversed(lows))
+            self.df[f'{coin}_high'] = list(reversed(highs))
+            if add_secondary_low_high:
+                self.df[f'{coin}_secondary_low'] = list(reversed(secondary_lows))
+                self.df[f'{coin}_secondary_high'] = list(reversed(secondary_highs))
             self.df[f'{coin}_trajectory'] = list(reversed(trajectory))
             self.df[f'{coin}_stability'] = list(reversed(stability))
 
-        coin_cols = [[f"{coin}_{feature}" for feature in ["open", "close", "low", "high", "trajectory", "stability"]] for coin in coins]
+        if add_secondary_low_high:
+            coin_cols = [[f"{coin}_{feature}" for feature in ["open", "mid", "close", "low", "high", "secondary_low", "secondary_high", "trajectory", "stability"]] for coin in coins]
+        else:
+            coin_cols = [[f"{coin}_{feature}" for feature in ["open", "mid", "close", "low", "high", "trajectory", "stability"]] for coin in coins]
+        
         coin_cols = [x for xs in coin_cols for x in xs]
         self.df = self.df[coin_cols].dropna(axis=0, how='any')
 
