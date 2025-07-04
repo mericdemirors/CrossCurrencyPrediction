@@ -8,7 +8,9 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class LogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
+    def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
+                 transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
         self.df = np.log(self.df / self.df.shift(1))
@@ -36,8 +38,8 @@ class LogReturnTransformCoinDataset(Dataset):
 
         self.augmentation_p = augmentation_p
         self.augmentation_noise_std = augmentation_noise_std
-        self.augment_constant_c = augment_constant_c
-        self.augment_scale_s = augment_scale_s
+        self.augmentation_constant_c = augmentation_constant_c
+        self.augmentation_scale_s = augmentation_scale_s
 
     def __len__(self):
         return len(self.df) - self.input_window - self.output_window + 1
@@ -76,8 +78,8 @@ class LogReturnTransformCoinDataset(Dataset):
         if torch.rand(1) < self.augmentation_p:
             x = x + np.random.normal(loc=0.0, scale=self.augmentation_noise_std, size=x.shape)
         if torch.rand(1) < self.augmentation_p:
-            x = x + np.random.uniform(-self.augment_constant_c, self.augment_constant_c)
+            x = x + np.random.uniform(-self.augmentation_constant_c, self.augmentation_constant_c)
         if torch.rand(1) < self.augmentation_p:
-            x = x * (1.0 + np.random.uniform(-self.augment_scale_s, self.augment_scale_s))
+            x = x * (1.0 + np.random.uniform(-self.augmentation_scale_s, self.augmentation_scale_s))
 
         return x

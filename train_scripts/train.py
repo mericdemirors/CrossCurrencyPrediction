@@ -188,7 +188,7 @@ def train_with_args(args):
 
     base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
-    "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
+    "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
     "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
     train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":1}
@@ -357,8 +357,8 @@ def main():
     parser.add_argument("--val_csv_path", type=str, default="") # csv path to load for validation dataset
     parser.add_argument("--augmentation_p", type=float, default=0) # probability of a sample being augmented (also the probability of each augmentation being applied to that sample)
     parser.add_argument("--augmentation_noise_std", type=float, default=0) # std for the gaussian noise augmentation
-    parser.add_argument("--augment_constant_c", type=float, default=0) # min max limit for the constant to be added to all samples
-    parser.add_argument("--augment_scale_s", type=float, default=0) # min max limit for the scale to be multiplied with all samples
+    parser.add_argument("--augmentation_constant_c", type=float, default=0) # min max limit for the constant to be added to all samples
+    parser.add_argument("--augmentation_scale_s", type=float, default=0) # min max limit for the scale to be multiplied with all samples
     parser.add_argument("--transform_name", type=str, default="QuantileTransformer") # sklearn.preprocessing QuantileTransformer or PowerTransformer to use
     parser.add_argument("--output_distribution", type=str, default="normal") # sklearn.preprocessing QuantileTransformer distribution type (only for the LogReturnTransformCoinDataset dataset)
     parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles (only for the LogReturnTransformCoinDataset dataset)
