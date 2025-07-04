@@ -1,4 +1,5 @@
 import os
+import math
 import json
 import argparse
 import numpy as np
@@ -15,8 +16,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from import_model import import_model
 from import_dataset import import_dataset
+from import_loss import import_loss
 
-def loss(model, prediction, target, loss_name, zero_weight, variance_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight):
+def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights):
     # --- Base loss ---
     if loss_name == "MSE":
         base_loss_fn = nn.MSELoss()
@@ -28,22 +30,9 @@ def loss(model, prediction, target, loss_name, zero_weight, variance_weight, low
     base_loss = base_loss_fn(prediction, target)
 
     # feature-wise losses
-    base_loss_open = base_loss_fn(prediction[:, 0, :], target[:, 0, :])
-    base_loss_close = base_loss_fn(prediction[:, 1, :], target[:, 1, :])
-    base_loss_low = base_loss_fn(prediction[:, 2, :], target[:, 2, :])
-    base_loss_high = base_loss_fn(prediction[:, 3, :], target[:, 3, :])
-
-    # --- low high constraints ---
-    low = prediction[:, 2, :]
-    high = prediction[:, 3, :]
-
-    # low should be non-positive, so we are punishing the positive parts
-    positive_low = torch.relu(low)
-
-    # high should be non-negative, so we are punishing the negative parts
-    negative_high = torch.relu(-1 * high)
-
-    low_high_loss = (negative_high + positive_low).mean()
+    feature_wise_losses = []
+    for i in range(prediction.shape[1]):
+        feature_wise_losses.append(base_loss_fn(prediction[:, i, :], target[:, i, :]).item())
 
     # regularization
     l1_reg = torch.tensor(0., device=prediction.device)
@@ -52,23 +41,16 @@ def loss(model, prediction, target, loss_name, zero_weight, variance_weight, low
         if param.requires_grad:
             l1_reg += param.abs().sum()
             l2_reg += (param ** 2).sum()
+    l1_reg = l1_loss_weight * l1_reg
+    l2_reg = l2_loss_weight * l2_reg
 
-    # punishes the model for predicting zero, trying to push predictions away from the mean
-    zero_penalty = torch.abs(prediction - target) * torch.abs(target).mean()
-    zero_penalty = torch.tensor(0., device=prediction.device)
+    additional_losses = []
+    for loss_fn, loss_weight in zip(additional_loss_fns, additional_loss_weights):
+        additional_losses.append((loss_fn(prediction, target) * loss_weight).item())
 
-    # --- Var reward ---
-    var_open = prediction[:, 0, :].var(unbiased=False)
-    var_close = prediction[:, 1, :].var(unbiased=False)
-    var_low = prediction[:, 2, :].var(unbiased=False)
-    var_high = prediction[:, 3, :].var(unbiased=False)
+    total_loss = base_loss + l1_reg + l2_reg + sum(additional_losses)
 
-    variance_reward = -(var_open + var_close + var_low + var_high)
-
-    # --- Final loss ---
-    total_loss = base_loss + zero_weight * zero_penalty + variance_reward * variance_weight  + low_high_loss_weight * low_high_loss + l1_loss_weight * l1_reg + l2_loss_weight * l2_reg
-    return total_loss, [base_loss.item(), base_loss_open.item(), base_loss_close.item(),  base_loss_low.item(), base_loss_high.item(), (zero_weight*zero_penalty).item(),
-                        (variance_weight*variance_reward).item(), (low_high_loss_weight * low_high_loss).item(), (l1_loss_weight*l1_reg).item(), (l2_loss_weight*l2_reg).item()]
+    return total_loss, [base_loss.item(), *feature_wise_losses, l1_reg.item(), l1_reg.item(), *additional_losses]
 
 def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
     plt.figure(figsize=(10, 6))
@@ -123,7 +105,7 @@ def plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_
     plt.savefig(os.path.join(train_session_dir, f'{model_name}_epoch{epoch_idx:03d}_weight_grad_dists_plot.png'))
     plt.close()
 
-def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_idx, save=False):
+def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_idx, output_coins, output_features, save=False):
     model = model.eval()
     all_targets = []
     all_predictions = []
@@ -153,17 +135,18 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
     for trust in range(8):
         pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:,trust], pred_series[:,-1,trust:]), dim=1))
 
-    feature_names = ["Open", "Close", "Low", "High"]
+    plot_names = [f'{c}_{f}' for c in output_coins for f in output_features]
     plt.figure(figsize=(20, 10))
 
-    for i in range(4):
-        plt.subplot(2, 2, i + 1)
+    for i in range(len(plot_names)):
+        row_count = math.ceil(len(plot_names)**0.5)
+        plt.subplot(row_count, math.ceil(len(plot_names)//row_count), i + 1)
         
         plt.plot(target_series_to_plot[i], label="Ground Truth", color="orange")
         for trust, pred_series_to_plot in enumerate(pred_series_with_different_trusts):
             plt.plot(pred_series_to_plot[i], label="Prediction", color="green", alpha=1/(trust+1))
 
-        plt.title(f'{feature_names[i]}')
+        plt.title(f'{plot_names[i]}')
         plt.xlabel("Time")
         plt.ylabel("Value")
         plt.legend()
@@ -178,7 +161,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
     model = model.train()
 
 def train_with_args(args):
-    model_kwargs = {"input_features": args.input_features, "output_features": args.output_features,
+    model_kwargs = {"input_features": len(args.input_coins)*len(args.input_features), "output_features": len(args.output_coins)*len(args.output_features),
     "input_window": args.input_window, "output_window": args.output_window,
     "dropout": args.dropout, "num_layers": args.num_layers,
     "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
@@ -203,7 +186,8 @@ def train_with_args(args):
     with open(os.path.join(train_session_dir, "args.json"), "w") as f:
         json.dump(vars(args), f, indent=4)
 
-    base_dataset_kwargs = { "coin_symbol": args.coin_symbol, "input_window": args.input_window, "output_window": args.output_window,
+    base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
+    "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augment_constant_c": args.augment_constant_c, "augment_scale_s": args.augment_scale_s,
     "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
@@ -225,16 +209,18 @@ def train_with_args(args):
     inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False)
     inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False)
 
-    train_model(model=model, model_name=args.model_name, train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
+    additional_loss_fns = import_loss(args.additional_loss_fn_names)
+
+    train_model(model=model, model_name=args.model_name, output_coins=args.output_coins, output_features=args.output_features,
+                train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
-                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, zero_weight=args.zero_weight,
-                variance_weight=args.variance_weight, low_high_loss_weight=args.low_high_loss_weight, l1_loss_weight=args.l1_loss_weight,
-                l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss,
-                train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
+                teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, l1_loss_weight=args.l1_loss_weight,
+                l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss, additional_loss_fns=additional_loss_fns,
+                additional_loss_weights = args.additional_loss_weights, train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
                 plot_weight_grad=args.plot_weight_grad)
 
-def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
-                zero_weight, variance_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight, loss_name, loss_fn, train_session_dir,
+def train_model(model, model_name, output_coins, output_features, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
+                l1_loss_weight, l2_loss_weight, loss_name, loss_fn, additional_loss_fns, additional_loss_weights, train_session_dir,
                 inference_dataloaders, plot_weight_grad):
     best_val_loss = float("inf")
     early_stop_step = 0
@@ -254,7 +240,7 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
             optimizer.zero_grad()
             output = model.call(batch_x, batch_y)
 
-            loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight)
+            loss, individual_losses = loss_fn(model, output, batch_y, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights)
             loss.backward()
             optimizer.step()
 
@@ -280,8 +266,8 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
                     plot_weight_grad_dists(weights, grads, train_session_dir, model_name, epoch_idx)
 
                     if epoch_plot_step != -1 and batch_idx > 0 and batch_idx % epoch_plot_step == 0:
-                        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train_mid_step_{batch_idx}', epoch_idx, epochs)
-                        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val_mid_step_{batch_idx}', epoch_idx, epochs)
+                        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train_mid_step_{batch_idx}', epoch_idx, epochs, output_coins, output_features)
+                        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val_mid_step_{batch_idx}', epoch_idx, epochs, output_coins, output_features)
 
             train_loss += loss.item()
             if individual_train_losses is not None:
@@ -302,7 +288,7 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
                 batch_x, batch_y = batch_x.to(device), batch_y.to(device)
                 output = model.call(batch_x, batch_y)
 
-                loss, individual_losses = loss_fn(model, output, batch_y, loss_name, zero_weight, variance_weight, low_high_loss_weight, l1_loss_weight, l2_loss_weight)
+                loss, individual_losses = loss_fn(model, output, batch_y, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights)
                 
                 val_loss += loss.item()
                 if individual_val_losses is not None:
@@ -341,8 +327,8 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
         if hasattr(model, "set_teacher_forcing_ratio"):
             model.set_teacher_forcing_ratio(model.teacher_forcing_ratio-teacher_forcing_ratio_decrease)
 
-        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train', epoch_idx, save=(early_stop_step==0))
-        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val', epoch_idx, save=(early_stop_step==0))
+        run_inference_and_plot(model, inference_dataloaders[0], train_session_dir, f'{model_name}_train', epoch_idx, output_coins, output_features, save=(early_stop_step==0))
+        run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val', epoch_idx, output_coins, output_features, save=(early_stop_step==0))
 
     plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name)
     
@@ -352,8 +338,6 @@ def train_model(model, model_name, train_loader, val_loader, epochs, epoch_plot_
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="") # name of the model to use
-    parser.add_argument("--input_features", type=int, default=16) # = (number of coins * features per coin) in the input
-    parser.add_argument("--output_features", type=int, default=4) # = (number of coins * features per coin) in the output
     parser.add_argument("--input_window", type=int, default=28) # = number of time-series data in the input
     parser.add_argument("--output_window", type=int, default=8) # = number of time-series data in the output
     parser.add_argument("--dropout", type=float, default=0.0) # dropout p for the models
@@ -364,7 +348,10 @@ def main():
     parser.add_argument("--teacher_forcing_ratio_decrease", type=float, default=0) # decrease in the teacher forcing ratio after each epoch
     parser.add_argument("--target_coin_index", type=int, default=0) # index of the coin models will predict
     parser.add_argument("--num_coins", type=int, default=4) # number of coins in the dataset
-    parser.add_argument("--coin_symbol", type=str, default="BTC") # symbol of the coin for the dataset
+    parser.add_argument("--input_coins", type=str, nargs='+', default=["BTC", "ETH", "BNB", "XRP"])
+    parser.add_argument("--input_features", type=str, nargs='+', default=["open", "close", "low", "high"])
+    parser.add_argument("--output_coins", type=str, nargs='+', default=["BTC"])
+    parser.add_argument("--output_features", type=str, nargs='+', default=["open", "close", "low", "high"])
     parser.add_argument("--dataset_name", type=str, default="") # name of the dataset to use
     parser.add_argument("--train_csv_path", type=str, default="") # csv path to load for training dataset
     parser.add_argument("--val_csv_path", type=str, default="") # csv path to load for validation dataset
@@ -377,9 +364,8 @@ def main():
     parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles (only for the LogReturnTransformCoinDataset dataset)
     parser.add_argument("--plot_weight_grad", type=int, default=0) # whether to plot weight and gradient plots at each epoch
     parser.add_argument("--loss_name", type=str, default="") # name of the loss to use
-    parser.add_argument("--zero_weight", type=float, default=0) # weight of the loss penalizing the wrong zero predictions
-    parser.add_argument("--variance_weight", type=float, default=0) # weight of the reward for high variance
-    parser.add_argument("--low_high_loss_weight", type=float, default=0) # weight of the custom low high loss (only for the DailyLogReturnTransformLowHighRootCoinDataset dataset)
+    parser.add_argument("--additional_loss_fn_names", type=str, nargs='+', default=[])
+    parser.add_argument("--additional_loss_weights", type=float, nargs='+', default=[])
     parser.add_argument("--l1_loss_weight", type=float, default=0) # weight for the l1 regularization
     parser.add_argument("--l2_loss_weight", type=float, default=0) # weight for the l2 regularization
     parser.add_argument("--batch_size", type=int, default=32) # batch size
