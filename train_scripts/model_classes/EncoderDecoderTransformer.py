@@ -20,13 +20,13 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class EncoderDecoderTransformer(nn.Module):
-    def __init__(self, input_features, output_features, output_window,  dropout, num_layers, hidden_dim, num_heads, teacher_forcing_ratio, target_coin_index):
+    def __init__(self, input_features, output_features, output_window,  dropout, num_layers, hidden_dim, num_heads, teacher_forcing_ratio, output_col_indices_in_input_cols):
         super().__init__()
         self.output_features = output_features
         self.output_window = output_window
-        self.target_coin_index = target_coin_index
         self.hidden_dim = hidden_dim
         self.teacher_forcing_ratio = teacher_forcing_ratio
+        self.output_col_indices_in_input_cols = output_col_indices_in_input_cols
 
         # project input and outputs to required model dimensions
         # and project model output to required data dimensions
@@ -42,11 +42,11 @@ class EncoderDecoderTransformer(nn.Module):
     def forward_with_target(self, src, tgt):
         src = src.permute(0, 2, 1)
         tgt = tgt.permute(0, 2, 1)
-        
+
         # shifting the target to one index right, and then putting the last input data at the first index
         tgt = tgt.roll(1, 1)
         # replace the first time data at every batch, with the first self.output_features values of the last time stamp of every batch
-        tgt[:,0] = src[:,-1,:self.output_features]
+        tgt[:,0] = src[:,-1,self.output_col_indices_in_input_cols]
 
         src = self.input_proj(src) * math.sqrt(self.hidden_dim)
         src = self.pos_encoder(src)
@@ -64,7 +64,7 @@ class EncoderDecoderTransformer(nn.Module):
         batch_size = src.size(0)
         src = src.permute(0, 2, 1)
 
-        last_input = src[:, -1, :][:, self.target_coin_index*self.output_features:(self.target_coin_index+1)*self.output_features]
+        last_input = src[:, -1, self.output_col_indices_in_input_cols]
         
         src = self.input_proj(src) * math.sqrt(self.hidden_dim)
         src = self.pos_encoder(src)

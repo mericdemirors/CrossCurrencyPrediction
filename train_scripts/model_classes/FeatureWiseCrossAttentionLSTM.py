@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 
 class FeatureWiseCrossAttentionLSTM(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_index, num_coins):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_indices, input_cols):
         super().__init__()
         self.output_window = output_window
         self.output_features = output_features
         self.input_features = input_features
-        self.num_coins = num_coins
-        self.target_coin_index = target_coin_index
+        
+        self.num_input_coins = len(set([x.split("_")[0] for x in input_cols]))
+        self.target_coin_indices = target_coin_indices
 
         # one LSTM per coin feature
         self.feature_lstms = nn.ModuleList([
@@ -19,13 +20,13 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
         # one attention to merge each coins' feature pipelines
         self.group_attentions = nn.ModuleList([
             nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, batch_first=True, dropout=dropout)
-            for _ in range(self.num_coins)
+            for _ in range(self.num_input_coins)
         ])
 
         # attention to merge coin pipelines
         self.final_attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, batch_first=True, dropout=dropout)
 
-        self.fc = nn.Linear(in_features=hidden_dim, out_features=output_features * output_window)
+        self.fc = nn.Linear(in_features=hidden_dim * len(target_coin_indices), out_features=output_features * output_window)
 
     def forward(self, x):
         batch_size = x.size(0)
@@ -41,10 +42,9 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
 
         # pass coin tensors into attentions and get 4 attentions outputs
         group_outputs = []
-        for i in range(self.num_coins):
-            group = features_stack[:, i * self.input_features//self.num_coins:(i + 1) * self.input_features//self.num_coins]  # [batch, 4, hidden_dim]
-            attn_mask = nn.Transformer.generate_square_subsequent_mask(self.input_features//self.num_coins).to(x.device)
-            attn_out, _ = self.group_attentions[i](group, group, group, attn_mask=attn_mask, is_causal=True)
+        for i in range(self.num_input_coins):
+            group = features_stack[:, i * self.input_features//self.num_input_coins:(i + 1) * self.input_features//self.num_input_coins]  # [batch, 4, hidden_dim]
+            attn_out, _ = self.group_attentions[i](group, group, group)
             group_pooled = attn_out.mean(dim=1)
             group_outputs.append(group_pooled)
 
@@ -52,15 +52,14 @@ class FeatureWiseCrossAttentionLSTM(nn.Module):
         res_connect = groups_stack
 
         # apply attention to merged coin pipelines
-        attn_mask = nn.Transformer.generate_square_subsequent_mask(self.output_features).to(x.device)
-        final_attn_out, _ = self.final_attention(groups_stack, groups_stack, groups_stack, attn_mask=attn_mask, is_causal=True)
+        final_attn_out, _ = self.final_attention(groups_stack, groups_stack, groups_stack)
         final_attn_out = final_attn_out + res_connect
 
         # get the applied attention to the target coin pipeline output
-        final_embedding = final_attn_out[:, self.target_coin_index, :]
+        final_embedding = final_attn_out[:, self.target_coin_indices, :]
+        final_embedding = final_embedding.view(batch_size, -1)
 
         output = self.fc(final_embedding)
-
         output = output.view(batch_size, self.output_features, self.output_window)
 
         return output

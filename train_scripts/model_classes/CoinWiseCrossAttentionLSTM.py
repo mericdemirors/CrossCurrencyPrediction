@@ -2,35 +2,36 @@ import torch
 import torch.nn as nn
 
 class CoinWiseCrossAttentionLSTM(nn.Module):
-    def __init__(self, input_features, output_features, input_window, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_index, num_coins):
+    def __init__(self, input_features, output_features, input_window, output_window, dropout, num_layers, hidden_dim, num_heads, target_coin_indices, input_cols):
         super().__init__()
         self.input_features = input_features
         self.output_features = output_features
         self.input_window = input_window
         self.output_window = output_window
-        self.num_coins = num_coins
-        self.target_coin_index = target_coin_index
+        
+        self.num_input_coins = len(set([x.split("_")[0] for x in input_cols]))
+        self.target_coin_indices = target_coin_indices
 
         # one LSTM per coin
         self.lstm_blocks = nn.ModuleList([
-            nn.LSTM(input_size=self.input_features//self.num_coins, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout
-            ) for _ in range(self.num_coins)
+            nn.LSTM(input_size=self.input_features//self.num_input_coins, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout
+            ) for _ in range(self.num_input_coins)
         ])
 
         # attention to merge coin pipelines
         self.attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, batch_first=True, dropout=dropout)
 
-        self.fc = nn.Linear(in_features=hidden_dim, out_features=output_features * output_window)
+        self.fc = nn.Linear(in_features=hidden_dim * len(target_coin_indices), out_features=output_features * output_window)
 
     def forward(self, x):
         batch_size = x.size(0)
 
         # one input per coin pipeline
-        x = x.view(batch_size, self.num_coins, self.input_features//self.num_coins, self.input_window)
+        x = x.view(batch_size, self.num_input_coins, self.input_features//self.num_input_coins, self.input_window)
         lstm_outputs = []
 
         # pass all coin pipelines and merge their last outputs in one tensor
-        for i in range(self.num_coins):
+        for i in range(self.num_input_coins):
             coin_input = x[:, i]
             coin_input = coin_input.permute(0, 2, 1)
             _, (h_n, _) = self.lstm_blocks[i](coin_input)
@@ -39,17 +40,15 @@ class CoinWiseCrossAttentionLSTM(nn.Module):
         lstm_stack = torch.stack(lstm_outputs, dim=1)
         res_connect = lstm_stack
 
-        attn_mask = nn.Transformer.generate_square_subsequent_mask(self.num_coins).to(x.device)
-
         # apply attention to merged coin pipeline last features
-        attn_out, _ = self.attention(lstm_stack, lstm_stack, lstm_stack, attn_mask=attn_mask, is_causal=True)
+        attn_out, _ = self.attention(lstm_stack, lstm_stack, lstm_stack)
         attn_out = attn_out + res_connect
-
+        
         # get the applied attention to the target coin pipeline output
-        target_coin = attn_out[:, self.target_coin_index, :]
-        
-        output = self.fc(target_coin)
-        
+        target_coin = attn_out[:, self.target_coin_indices, :]        
+        target_coin = target_coin.view(batch_size, -1)
+
+        output = self.fc(target_coin)                
         output = output.view(batch_size, self.output_features, self.output_window)
 
         return output

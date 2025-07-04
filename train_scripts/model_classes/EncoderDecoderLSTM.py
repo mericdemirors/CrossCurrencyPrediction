@@ -40,13 +40,13 @@ class DecoderLSTM(nn.Module):
         return torch.cat(outputs, dim=1)
 
 class EncoderDecoderLSTM(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, teacher_forcing_ratio, target_coin_index):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, teacher_forcing_ratio, output_col_indices_in_input_cols):
         super(EncoderDecoderLSTM, self).__init__()
         self.encoder = EncoderLSTM(input_features=input_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim)
         self.decoder = DecoderLSTM(output_features=output_features, dropout=dropout, num_layers=num_layers, hidden_dim=hidden_dim, teacher_forcing_ratio=teacher_forcing_ratio)
         self.output_features = output_features
         self.output_window = output_window
-        self.target_coin_index = target_coin_index
+        self.output_col_indices_in_input_cols = output_col_indices_in_input_cols
         self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
     def forward(self, x, target):
@@ -54,7 +54,7 @@ class EncoderDecoderLSTM(nn.Module):
 
         # get the last data from training, pass it as the decoder's input
         last_x = x[:, -1, :]
-        last_x = last_x[:, self.target_coin_index*self.output_features:(self.target_coin_index+1)*self.output_features]
+        last_x = last_x[:, self.output_col_indices_in_input_cols]
         last_x = last_x.unsqueeze(1)
 
         # get encoded output
