@@ -166,7 +166,9 @@ def train_with_args(args):
     output_col_indices_in_input_cols = [input_cols.index(col) for col in output_cols]
     target_coin_indices = [args.input_coins.index(c) for c in args.output_coins]
 
-    if len(output_col_indices_in_input_cols) != len(args.output_coins)*len(args.output_features):
+    if len(set(output_cols).difference(set(input_cols))) != 0:
+        print(set(output_col_indices_in_input_cols))
+        print(set(output_cols))
         print("ALL OUTPUT COLUMNS SHOULD BE IN THE INPUT COLUMN, OR SOME MODEL INDEXINGS MAY BREAK")
         print(6/0)
 

@@ -7,7 +7,6 @@ class EncoderGRU(nn.Module):
         self.gru = nn.GRU(input_size=input_features, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
 
     def forward(self, x):
-        x = x.permute(0, 2, 1)
         outputs, hidden = self.gru(x)
         return hidden
 
@@ -34,7 +33,6 @@ class DecoderGRU(nn.Module):
                 decoder_input = target[:, t].unsqueeze(1)
             else:
                 decoder_input = pred.unsqueeze(1)
-
         return torch.cat(outputs, dim=1)
 
 class EncoderDecoderGRU(nn.Module):
@@ -48,6 +46,7 @@ class EncoderDecoderGRU(nn.Module):
         self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
     def forward(self, x, target):
+        x = x.permute(0, 2, 1)
         target = target.permute(0, 2, 1)
 
         # get the last data from training, pass it as the decoder's input

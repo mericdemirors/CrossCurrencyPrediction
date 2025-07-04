@@ -65,7 +65,7 @@ class EncoderDecoderTransformer(nn.Module):
         src = src.permute(0, 2, 1)
 
         last_input = src[:, -1, self.output_col_indices_in_input_cols]
-        
+
         src = self.input_proj(src) * math.sqrt(self.hidden_dim)
         src = self.pos_encoder(src)
 

@@ -7,7 +7,6 @@ class EncoderLSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=input_features, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout)
 
     def forward(self, x):
-        x = x.permute(0, 2, 1)
         outputs, (hidden, cell) = self.lstm(x)
 
         return hidden, cell
@@ -50,6 +49,7 @@ class EncoderDecoderLSTM(nn.Module):
         self.teacher_forcing_ratio = self.decoder.teacher_forcing_ratio
 
     def forward(self, x, target):
+        x = x.permute(0, 2, 1)
         target = target.permute(0, 2, 1)
 
         # get the last data from training, pass it as the decoder's input
