@@ -8,38 +8,32 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class IntervalLogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
+    def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
+                 num_coins, num_features, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        self.df.loc[:, "BTC_low"] = np.log(self.df["BTC_low"] / self.df["BTC_open"])
-        self.df.loc[:, "BTC_high"] = np.log(self.df["BTC_high"] / self.df["BTC_open"])
-        self.df.loc[:, "BTC_close"] = np.log(self.df["BTC_close"] / self.df["BTC_open"])
+        self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
+        self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
+        self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
+        self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
 
-        self.df.loc[:, "ETH_low"] = np.log(self.df["ETH_low"] / self.df["ETH_open"])
-        self.df.loc[:, "ETH_high"] = np.log(self.df["ETH_high"] / self.df["ETH_open"])
-        self.df.loc[:, "ETH_close"] = np.log(self.df["ETH_close"] / self.df["ETH_open"])
-
-        self.df.loc[:, "BNB_low"] = np.log(self.df["BNB_low"] / self.df["BNB_open"])
-        self.df.loc[:, "BNB_high"] = np.log(self.df["BNB_high"] / self.df["BNB_open"])
-        self.df.loc[:, "BNB_close"] = np.log(self.df["BNB_close"] / self.df["BNB_open"])
-
-        self.df.loc[:, "XRP_low"] = np.log(self.df["XRP_low"] / self.df["XRP_open"])
-        self.df.loc[:, "XRP_high"] = np.log(self.df["XRP_high"] / self.df["XRP_open"])
-        self.df.loc[:, "XRP_close"] = np.log(self.df["XRP_close"] / self.df["XRP_open"])
-
-        btc_open = self.df["BTC_open"].values
-        self.df.iloc[1:, self.df.columns.get_loc("BTC_open")] = np.log(btc_open[1:] / (btc_open[:-1]))
-        eth_open = self.df["ETH_open"].values
-        self.df.iloc[1:, self.df.columns.get_loc("ETH_open")] = np.log(eth_open[1:] / (eth_open[:-1]))
-        bnb_open = self.df["BNB_open"].values
-        self.df.iloc[1:, self.df.columns.get_loc("BNB_open")] = np.log(bnb_open[1:] / (bnb_open[:-1]))
-        xrp_open = self.df["XRP_open"].values
-        self.df.iloc[1:, self.df.columns.get_loc("XRP_open")] = np.log(xrp_open[1:] / (xrp_open[:-1]))
+        cols_to_process = set(self.input_cols).union(set(self.output_cols))
+        for col in cols_to_process:
+            [c,f] = col.split("_")
+            if f == "open":
+                continue
+            else:
+                self.df.loc[:, f'{c}_{f}'] = np.log(self.df[f'{c}_{f}'] / self.df[f'{c}_open'])
+        for col in cols_to_process:
+            [c,f] = col.split("_")
+            if f == "open":
+                c_open = self.df[f'{c}_open'].values
+                self.df.iloc[1:, self.df.columns.get_loc(f'{c}_open')] = np.log(c_open[1:] / (c_open[:-1]))
+            else:
+                continue
 
         self.df = self.df.iloc[1:]
-
-        start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
-        self.coin_cols = self.df.columns[start: end]
 
         if training_dataset:
             if transform_name == "QuantileTransformer":
@@ -47,14 +41,16 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
             elif transform_name == "PowerTransformer":
                 self.transform = PowerTransformer(method="yeo-johnson")
 
-            self.df = pd.DataFrame(self.transform.fit_transform(self.df), columns=self.df.columns, index=self.df.index)
+            self.df = pd.DataFrame(self.transform.fit_transform(self.df.values), columns=self.df.columns, index=self.df.index)
             joblib.dump(self.transform, os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
         else:
             self.transform = joblib.load( os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
-            self.df = pd.DataFrame(self.transform.transform(self.df), columns=self.df.columns, index=self.df.index)
+            self.df = pd.DataFrame(self.transform.transform(self.df.values), columns=self.df.columns, index=self.df.index)
 
         self.input_window = input_window
         self.output_window = output_window
+        self.num_coins = num_coins
+        self.num_features = num_features
 
         self.augmentation_p = augmentation_p
         self.augmentation_noise_std = augmentation_noise_std
@@ -69,8 +65,8 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
         prediction_rows = self.df.iloc[idx + self.input_window:idx + self.input_window + self.output_window]
 
         # first 4 columns are BTC_open/close/low_high, and then same 4 for each ETH, BNB, XRP. Each column is a timestamp
-        analysis_matrix = analysis_rows[analysis_rows.columns].to_numpy()
-        prediction_target = prediction_rows[self.coin_cols].to_numpy()
+        analysis_matrix = analysis_rows[self.input_cols].to_numpy()
+        prediction_target = prediction_rows[self.output_cols].to_numpy()
 
         x, y = analysis_matrix.T, prediction_target.T
 
@@ -80,10 +76,10 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
     def rescale_to_real_price(self, price, initial_prices):
-        price_with_zero_cols = np.zeros((price.shape[0], 16))
-        price_with_zero_cols[:, :4] = price
+        price_with_zero_cols = np.zeros((price.shape[0], self.num_coins * self.num_features))
+        price_with_zero_cols[:, self.output_col_indices] = price
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
-        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, :4])
+        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices])
 
         real_price = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
         real_price[0] = initial_prices
