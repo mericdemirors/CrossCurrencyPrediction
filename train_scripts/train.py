@@ -44,6 +44,7 @@ def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, a
     l1_reg = l1_loss_weight * l1_reg
     l2_reg = l2_loss_weight * l2_reg
 
+    # additional losses
     additional_losses = []
     for loss_fn, loss_weight in zip(additional_loss_fns, additional_loss_weights):
         additional_losses.append((loss_fn(prediction, target) * loss_weight).item())
@@ -119,11 +120,11 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
             all_predictions.append(preds.cpu())
             all_targets.append(y_batch.cpu())
 
-    # Concatenate all batches [batch, 4, 8] -> [total_seq, 4, 8]
-    all_targets = torch.cat(all_targets, dim=0)  # [n, 4, 8]
-    all_predictions = torch.cat(all_predictions, dim=0)  # [n, 4, 8]
+    # Concatenate all batches [batch, features, timeline] -> [total_seq, features, timeline]
+    all_targets = torch.cat(all_targets, dim=0)  # [n, features, timeline]
+    all_predictions = torch.cat(all_predictions, dim=0)  # [n, features, timeline]
 
-    # Reshape into full time series: [n, 4, 8] -> [4, n, 8]
+    # Reshape into full time series: [n, features, timeline] -> [features, n, timeline]
     target_series = all_targets.permute(1, 0, 2)
     pred_series = all_predictions.permute(1, 0, 2)
     
@@ -132,7 +133,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
 
     target_series_to_plot = torch.cat((target_series[:,:,0], target_series[:,-1]), dim=1)
     pred_series_with_different_trusts = []
-    for trust in range(8):
+    for trust in range(pred_series.shape[2]):
         pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:,trust], pred_series[:,-1,trust:]), dim=1))
 
     plot_names = [f'{c}_{f}' for c in output_coins for f in output_features]
@@ -174,8 +175,7 @@ def train_with_args(args):
 
     model_kwargs = {"input_features": len(args.input_coins)*len(args.input_features), "output_features": len(args.output_coins)*len(args.output_features),
     "input_window": args.input_window, "output_window": args.output_window,
-    "dropout": args.dropout, "num_layers": args.num_layers,
-    "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
+    "dropout": args.dropout, "num_layers": args.num_layers, "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
     "teacher_forcing_ratio": args.teacher_forcing_ratio, "input_cols":input_cols, "output_cols":output_cols,
     "target_coin_indices": target_coin_indices, "output_col_indices_in_input_cols": output_col_indices_in_input_cols,
     "device": device}
@@ -357,10 +357,10 @@ def main():
     parser.add_argument("--num_heads", type=int, default=4) # number of heads for the Multiheadattention/Transformer
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0) # teacher forcing start ratio (what percentage of the training samples will be predicted utilizing the real data for later values in the output_window)
     parser.add_argument("--teacher_forcing_ratio_decrease", type=float, default=0) # decrease in the teacher forcing ratio after each epoch
-    parser.add_argument("--input_coins", type=str, nargs='+', default=["BTC", "ETH", "BNB", "XRP"])
-    parser.add_argument("--input_features", type=str, nargs='+', default=["open", "close", "low", "high"])
-    parser.add_argument("--output_coins", type=str, nargs='+', default=["BTC"])
-    parser.add_argument("--output_features", type=str, nargs='+', default=["open", "close", "low", "high"])
+    parser.add_argument("--input_coins", type=str, nargs='+', default=["BTC", "ETH", "BNB", "XRP"]) # coins to feed the model
+    parser.add_argument("--input_features", type=str, nargs='+', default=["open", "close", "low", "high"]) # features to feed the model
+    parser.add_argument("--output_coins", type=str, nargs='+', default=["BTC"]) # coins to get from model
+    parser.add_argument("--output_features", type=str, nargs='+', default=["open", "close", "low", "high"]) # features to get from model
     parser.add_argument("--dataset_name", type=str, default="") # name of the dataset to use
     parser.add_argument("--train_csv_path", type=str, default="") # csv path to load for training dataset
     parser.add_argument("--val_csv_path", type=str, default="") # csv path to load for validation dataset
@@ -373,8 +373,8 @@ def main():
     parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles (only for the LogReturnTransformCoinDataset dataset)
     parser.add_argument("--plot_weight_grad", type=int, default=0) # whether to plot weight and gradient plots at each epoch
     parser.add_argument("--loss_name", type=str, default="") # name of the loss to use
-    parser.add_argument("--additional_loss_fn_names", type=str, nargs='+', default=[])
-    parser.add_argument("--additional_loss_weights", type=float, nargs='+', default=[])
+    parser.add_argument("--additional_loss_fn_names", type=str, nargs='+', default=[]) # names of additional losses to apply
+    parser.add_argument("--additional_loss_weights", type=float, nargs='+', default=[]) # weights of additional losses to apply
     parser.add_argument("--l1_loss_weight", type=float, default=0) # weight for the l1 regularization
     parser.add_argument("--l2_loss_weight", type=float, default=0) # weight for the l2 regularization
     parser.add_argument("--batch_size", type=int, default=32) # batch size
