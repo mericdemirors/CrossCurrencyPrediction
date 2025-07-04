@@ -13,7 +13,11 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
                  augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
+        self.csv_path = csv_path
+        self.input_features = input_features
+        self.output_coins = output_coins
         self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
+        self.output_features = output_features
         self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
         self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
         self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
@@ -82,11 +86,38 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
         real_price = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
         real_price[0] = initial_prices
 
-        for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
-            real_price[t + 1, 0] = real_price[t, 0] * torch.exp(price_with_zero_cols_inverted_only_coin[t, 0])
-            real_price[t + 1, 1:] = real_price[t + 1, 0] * torch.exp(price_with_zero_cols_inverted_only_coin[t, 1:])
-        real_price = real_price[1:]
+        df = pd.read_csv(self.csv_path, index_col="open_time")
 
+        for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
+            if "open" in self.output_features: # if we have some open features in the output, we will relate the other features to them
+                # get the output columns' indices with open feature
+                open_column_indices_in_output_columns = [self.output_cols.index(col) for col in self.output_cols if "open" in col]
+            else:
+                # if there is no open feature, we need to fine the open prices of the coins from the dataset
+                matches = np.all(np.isclose(df[self.df.columns[self.output_col_indices]].values, initial_prices.numpy(), atol=1e-4), axis=1)
+                matching_row_index = np.where(matches)[0]
+                # get the interval t's open values for the coins
+                opens_row_index = matching_row_index + t + 1
+                # create a list open prices to relate
+                opens_to_relate = torch.tensor(df[[f'{c}_open' for c in self.output_coins]].iloc[opens_row_index].values).squeeze()
+
+            # get the output columns' indices without open feature
+            nonopen_column_indices_in_output_columns = [self.output_cols.index(col) for col in self.output_cols if "open" not in col]
+
+            if "open" in self.output_features:
+                # calculate the open feature to previous intervals open price
+                real_price[t + 1, open_column_indices_in_output_columns] = real_price[t, open_column_indices_in_output_columns] * torch.exp(price_with_zero_cols_inverted_only_coin[t, open_column_indices_in_output_columns]).float()
+                
+                # for other columns we relate them to the open feature of the same coin
+                for i in range(len(self.output_coins)):
+                    real_price[t + 1, nonopen_column_indices_in_output_columns[i*(len(self.output_features)-1):(i+1)*(len(self.output_features)-1)]] = real_price[t + 1, open_column_indices_in_output_columns[i]] * torch.exp(price_with_zero_cols_inverted_only_coin[t, nonopen_column_indices_in_output_columns[i*(len(self.output_features)-1):(i+1)*(len(self.output_features)-1)]]).float()
+            else:
+                # if we don't have open in the output columns that means we have the opens_to_relate vector
+                for i in range(len(self.output_coins)):
+                    # for other columns we relate them to the opens_to_relate of the same coin
+                    real_price[t + 1, nonopen_column_indices_in_output_columns[i*(len(self.output_features)):(i+1)*(len(self.output_features))]] = opens_to_relate[i] * torch.exp(price_with_zero_cols_inverted_only_coin[t, nonopen_column_indices_in_output_columns[i*(len(self.output_features)):(i+1)*(len(self.output_features))]]).float()
+
+        real_price = real_price[1:]
         return real_price
 
     def augment(self, x):
