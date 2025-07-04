@@ -9,7 +9,7 @@ from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
     def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
-                 num_coins, num_features, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
                  augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
@@ -59,8 +59,6 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
 
         self.input_window = input_window
         self.output_window = output_window
-        self.num_coins = num_coins
-        self.num_features = num_features
 
         self.augmentation_p = augmentation_p
         self.augmentation_noise_std = augmentation_noise_std
@@ -90,7 +88,7 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
         low_high_prices = price[:, self.low_high_col_indices_in_output]
         low_high_prices = torch.square(low_high_prices) * torch.sign(low_high_prices)
 
-        price_with_zero_cols = np.zeros((price.shape[0], self.num_coins * self.num_features))
+        price_with_zero_cols = np.zeros((price.shape[0], len(self.df.columns)))
         price_with_zero_cols[:, self.output_col_indices] = price
 
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)

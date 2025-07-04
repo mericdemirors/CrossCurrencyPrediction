@@ -9,7 +9,7 @@ from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class IntervalLogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
-                 num_coins, num_features, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
                  augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
@@ -49,8 +49,6 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
 
         self.input_window = input_window
         self.output_window = output_window
-        self.num_coins = num_coins
-        self.num_features = num_features
 
         self.augmentation_p = augmentation_p
         self.augmentation_noise_std = augmentation_noise_std
@@ -76,7 +74,7 @@ class IntervalLogReturnTransformCoinDataset(Dataset):
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
     def rescale_to_real_price(self, price, initial_prices):
-        price_with_zero_cols = np.zeros((price.shape[0], self.num_coins * self.num_features))
+        price_with_zero_cols = np.zeros((price.shape[0], len(self.df.columns)))
         price_with_zero_cols[:, self.output_col_indices] = price
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
         price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices])

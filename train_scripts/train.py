@@ -176,7 +176,7 @@ def train_with_args(args):
     "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
     "teacher_forcing_ratio": args.teacher_forcing_ratio, "input_cols":input_cols, "output_cols":output_cols,
     "target_coin_indices": target_coin_indices, "output_col_indices_in_input_cols": output_col_indices_in_input_cols,
-    "num_coins": args.num_coins, "device": device}
+    "device": device}
 
     model = import_model(args.model_name, **model_kwargs)
 
@@ -196,7 +196,7 @@ def train_with_args(args):
         json.dump(vars(args), f, indent=4)
 
     base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
-    "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window, "num_coins": args.num_coins, "num_features": args.num_features,
+    "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
     "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
     
@@ -355,8 +355,6 @@ def main():
     parser.add_argument("--num_heads", type=int, default=4) # number of heads for the Multiheadattention/Transformer
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0) # teacher forcing start ratio (what percentage of the training samples will be predicted utilizing the real data for later values in the output_window)
     parser.add_argument("--teacher_forcing_ratio_decrease", type=float, default=0) # decrease in the teacher forcing ratio after each epoch
-    parser.add_argument("--num_coins", type=int, default=4) # number of coins in the dataset
-    parser.add_argument("--num_features", type=int, default=4) # number of features in the dataset
     parser.add_argument("--input_coins", type=str, nargs='+', default=["BTC", "ETH", "BNB", "XRP"])
     parser.add_argument("--input_features", type=str, nargs='+', default=["open", "close", "low", "high"])
     parser.add_argument("--output_coins", type=str, nargs='+', default=["BTC"])
