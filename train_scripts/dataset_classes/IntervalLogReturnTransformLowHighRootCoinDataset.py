@@ -146,18 +146,21 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
         if torch.rand(1) < self.augmentation_p:
             x = x * (1.0 + np.random.uniform(-self.augmentation_scale_s, self.augmentation_scale_s))
 
+        self.output_cols = [f'{c}_{f}' for c in self.output_coins for f in self.output_features]
+        self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
+
         # low is always negative, high is always positive
-        low_cols = [2, 6, 10 ,14]
-        high_cols = [3, 7, 11 ,15]
-
+        low_cols = [self.output_cols.index(col) for col in self.output_cols if "low" in col]
         for low_col in low_cols:
-            x[low_col] = np.clip(x[low_col], a_min=min(x[low_col]), a_max=0)
-        for high_col in high_cols:
-            x[high_col] = np.clip(x[high_col], a_min=0, a_max=max(x[high_col]))
+            x[low_col] = np.clip(x[low_col], a_min=None, a_max=0)
 
-        # cloe is always in between low and high
-        close_cols = [1, 5, 9, 13]
-        for close_col in close_cols:
-            x[close_col] = np.clip(x[close_col], a_min=x[close_col+1], a_max=x[close_col+2])
+        high_cols = [self.output_cols.index(col) for col in self.output_cols if "high" in col]
+        for high_col in high_cols:
+            x[high_col] = np.clip(x[high_col], a_min=0, a_max=None)
+
+        close_cols = [self.output_cols.index(col) for col in self.output_cols if "close" in col]
+        if len(low_cols) == len(high_cols) and len(low_cols) == len(close_cols):
+            for e, close_col in enumerate(close_cols):
+                x[close_col] = np.clip(x[close_col], a_min=x[low_cols[e]], a_max=x[high_cols[e]])
 
         return x
