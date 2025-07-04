@@ -8,14 +8,16 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class LogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
+    def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window, augmentation_p, augmentation_noise_std, augment_constant_c, augment_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset):
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
         self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
-        start, end  = {'BTC': (0, 4), 'ETH': (4, 8), 'BNB': (8, 12), 'XRP': (12, 16)}[coin_symbol]
-        self.coin_cols = self.df.columns[start: end]
+        self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
+        self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
+        self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
+        self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
 
         if training_dataset:
             if transform_name == "QuantileTransformer":
@@ -26,7 +28,7 @@ class LogReturnTransformCoinDataset(Dataset):
             self.df = pd.DataFrame(self.transform.fit_transform(self.df), columns=self.df.columns, index=self.df.index)
             joblib.dump(self.transform, os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
         else:
-            self.transform = joblib.load( os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
+            self.transform = joblib.load(os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
             self.df = pd.DataFrame(self.transform.transform(self.df), columns=self.df.columns, index=self.df.index)
 
         self.input_window = input_window
@@ -45,8 +47,8 @@ class LogReturnTransformCoinDataset(Dataset):
         prediction_rows = self.df.iloc[idx + self.input_window:idx + self.input_window + self.output_window]
 
         # first 4 columns are BTC_open/close/low_high, and then same 4 for each ETH, BNB, XRP. Each column is a timestamp
-        analysis_matrix = analysis_rows[analysis_rows.columns].to_numpy()
-        prediction_target = prediction_rows[self.coin_cols].to_numpy()
+        analysis_matrix = analysis_rows[self.input_cols].to_numpy()
+        prediction_target = prediction_rows[self.output_cols].to_numpy()
 
         x, y = analysis_matrix.T, prediction_target.T
 
@@ -57,9 +59,9 @@ class LogReturnTransformCoinDataset(Dataset):
 
     def rescale_to_real_price(self, price, initial_prices):
         price_with_zero_cols = np.zeros((price.shape[0], 16))
-        price_with_zero_cols[:, :4] = price
+        price_with_zero_cols[:, self.output_col_indices] = price
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
-        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, :4])
+        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices])
 
         real_price = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
         real_price[0] = initial_prices
