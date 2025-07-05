@@ -97,14 +97,17 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
 
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
         price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices]).float()
-        
+
         # till here, we didn't do anything with the low high
-        price_with_zero_cols_inverted_only_coin[:, self.low_high_col_indices_in_output] = low_high_prices
+        price_with_zero_cols_inverted_only_coin[:, self.low_high_col_indices_in_output] = low_high_prices.float()
 
         real_price = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
         real_price[0] = initial_prices
 
         df = pd.read_csv(self.csv_path, index_col="open_time")
+
+        # get the output columns' indices without open feature
+        nonopen_column_indices_in_output_columns = [self.output_cols.index(col) for col in self.output_cols if "open" not in col]
 
         for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
             if "open" in self.output_features: # if we have some open features in the output, we will relate the other features to them
@@ -118,9 +121,6 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
                 opens_row_index = matching_row_index + t + 1
                 # create a list open prices to relate
                 opens_to_relate = torch.tensor(df[[f'{c}_open' for c in self.output_coins]].iloc[opens_row_index].values).squeeze()
-
-            # get the output columns' indices without open feature
-            nonopen_column_indices_in_output_columns = [self.output_cols.index(col) for col in self.output_cols if "open" not in col]
 
             if "open" in self.output_features:
                 # calculate the open feature to previous intervals open price
