@@ -11,6 +11,7 @@ class LogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
                  transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
                  augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
+        self.csv_path = csv_path
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
         self.df = np.log(self.df / self.df.shift(1))
@@ -65,14 +66,26 @@ class LogReturnTransformCoinDataset(Dataset):
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
         price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices])
 
-        real_price = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
-        real_price[0] = initial_prices
+        real_price_based_on_only_predictions = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
+        real_price_based_on_real_data = torch.zeros((price_with_zero_cols_inverted_only_coin.shape[0] + 1, price_with_zero_cols_inverted_only_coin.shape[1]))
+        real_price_based_on_only_predictions[0] = initial_prices.float()
+        real_price_based_on_real_data[0] = initial_prices.float()
 
-        for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
-            real_price[t + 1] = real_price[t] * torch.exp(price_with_zero_cols_inverted_only_coin[t])
-        real_price = real_price[1:]
+        df = pd.read_csv(self.csv_path, index_col="open_time")
+        matches = np.all(np.isclose(df[self.output_cols].values, initial_prices.numpy(), atol=1e-4), axis=1)
+        initial_prices_index = np.where(matches)[0]
 
-        return real_price
+        real_data_to_relate = torch.tensor(df[self.output_cols].iloc[(initial_prices_index).item(): (initial_prices_index+price_with_zero_cols_inverted_only_coin.shape[0]).item()].values).squeeze().float()
+        real_price_based_on_real_data = real_data_to_relate * torch.exp(price_with_zero_cols_inverted_only_coin)
+
+        real_price_based_on_only_predictions = initial_prices * np.exp(np.cumsum(price_with_zero_cols_inverted_only_coin, axis=0))
+        # for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
+        #     real_price_based_on_only_predictions[t + 1] = real_price_based_on_only_predictions[t] * torch.exp(price_with_zero_cols_inverted_only_coin[t])
+            
+        #     real_data_to_relate = torch.tensor(df[self.output_cols].iloc[initial_prices_index + t].values).squeeze().float()
+        #     real_price_based_on_real_data[t + 1] = real_data_to_relate * torch.exp(price_with_zero_cols_inverted_only_coin[t])
+
+        return real_price_based_on_real_data, real_price_based_on_only_predictions
 
     def augment(self, x):
         if torch.rand(1) < self.augmentation_p:
