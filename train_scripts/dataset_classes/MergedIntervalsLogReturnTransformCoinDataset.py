@@ -8,11 +8,15 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
-    def __init__(self, csv_path, coin_symbol, input_window, output_window, augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset, add_secondary_low_high):
+    def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
+                 transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
+                
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        coins = ['BTC', 'ETH', 'BNB', 'XRP']
-
+        coins = list(set(input_coins).union(set(output_coins)))
+        features = list(set(input_features).union(set(output_features)))
+        
         for coin in coins:
             open_data = self.df[f'{coin}_open'].values
             close_data = self.df[f'{coin}_close'].values
@@ -52,16 +56,16 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
                 highest_high = max(high1, high2)
 
                 if lowest_low == low1 and highest_high == high2:
-                    traj = 1 # going up
+                    traj = highest_high - lowest_low # going up
                 elif lowest_low == low2 and highest_high == high1:
-                    traj = -1 # going down
+                    traj = lowest_low - highest_high # going down
                 else:
                     traj = 0 # no info
 
                 if high1 - low1 > high2 - low2:
-                    stab = -1 # less stabil
+                    stab = (high1 - low1) - (high2 - low2) # more stabil
                 else:
-                    stab = 1 # more stabil
+                    stab = (high1 - low1) - (high2 - low2) # less stabil
                 
                 opens.append(open_data[row_i-1])
                 mids.append((close_data[row_i-1] + open_data[row_i])/2)
@@ -96,29 +100,28 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
             self.df[f'{coin}_open'] = list(reversed(opens))
             self.df[f'{coin}_mid'] = list(reversed(mids))
             self.df[f'{coin}_close'] = list(reversed(closes))
-            self.df[f'{coin}_low'] = list(reversed(lows))
-            self.df[f'{coin}_high'] = list(reversed(highs))
-            if add_secondary_low_high:
-                self.df[f'{coin}_secondary_low'] = list(reversed(secondary_lows))
-                self.df[f'{coin}_secondary_high'] = list(reversed(secondary_highs))
+            self.df[f'{coin}_low1'] = list(reversed(lows))
+            self.df[f'{coin}_high1'] = list(reversed(highs))
+            self.df[f'{coin}_low2'] = list(reversed(secondary_lows))
+            self.df[f'{coin}_high2'] = list(reversed(secondary_highs))
             self.df[f'{coin}_trajectory'] = list(reversed(trajectory))
             self.df[f'{coin}_stability'] = list(reversed(stability))
 
-        if add_secondary_low_high:
-            coin_cols = [[f"{coin}_{feature}" for feature in ["open", "mid", "close", "low", "high", "secondary_low", "secondary_high", "trajectory", "stability"]] for coin in coins]
-        else:
-            coin_cols = [[f"{coin}_{feature}" for feature in ["open", "mid", "close", "low", "high", "trajectory", "stability"]] for coin in coins]
-        
-        coin_cols = [x for xs in coin_cols for x in xs]
+        coin_cols = [[f"{coin}_{feature}" for feature in features] for coin in coins] # = [[BTC cols...], [ETH cols...], ...]
+        coin_cols = [x for xs in coin_cols for x in xs] # = [BTC cols..., ETH cols..., ...] puts everything in one big list
         self.df = self.df[coin_cols].dropna(axis=0, how='any')
 
-        price_cols = [col for col in self.df.columns if not ("trajectory" in col or "stability" in col)]
+        self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
+        self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
+        self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
+        self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
+
+        traj_stab_cols = [col for col in self.df.columns if "trajectory" in col or "stability" in col]
+        price_cols = [col for col in self.df.columns if col not in traj_stab_cols]
 
         self.df[price_cols] = np.log(self.df[price_cols] / self.df[price_cols].shift(1))
         self.df.dropna(inplace=True)
-
-        start, end  = {'BTC': (0, 4), 'ETH': (6, 10), 'BNB': (12, 16), 'XRP': (18, 22)}[coin_symbol]
-        self.coin_cols = self.df.columns[start: end]
+        self.df_copy_for_traj_stab = self.df.copy()
 
         if training_dataset:
             if transform_name == "QuantileTransformer":
@@ -126,11 +129,13 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
             elif transform_name == "PowerTransformer":
                 self.transform = PowerTransformer(method="yeo-johnson")
 
-            self.df[price_cols] = pd.DataFrame(self.transform.fit_transform(self.df[price_cols]), columns=price_cols, index=self.df.index)
+            self.df = pd.DataFrame(self.transform.fit_transform(self.df.values), columns=self.df.columns, index=self.df.index)
             joblib.dump(self.transform, os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
         else:
             self.transform = joblib.load( os.path.join(train_session_dir,f'dataset_{transform_name}.pkl'))
-            self.df[price_cols] = pd.DataFrame(self.transform.transform(self.df[price_cols]), columns=price_cols, index=self.df.index)
+            self.df = pd.DataFrame(self.transform.transform(self.df.values), columns=self.df.columns, index=self.df.index)
+
+        self.df[traj_stab_cols] = self.df_copy_for_traj_stab[traj_stab_cols]
 
         self.input_window = input_window
         self.output_window = output_window
@@ -147,8 +152,8 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
         analysis_rows = self.df.iloc[idx:idx + self.input_window]
         prediction_rows = self.df.iloc[idx + self.input_window:idx + self.input_window + self.output_window]
 
-        analysis_matrix = analysis_rows[analysis_rows.columns].to_numpy()
-        prediction_target = prediction_rows[self.coin_cols].to_numpy()
+        analysis_matrix = analysis_rows[self.input_cols].to_numpy()
+        prediction_target = prediction_rows[self.output_cols].to_numpy()
 
         x, y = analysis_matrix.T, prediction_target.T
 
