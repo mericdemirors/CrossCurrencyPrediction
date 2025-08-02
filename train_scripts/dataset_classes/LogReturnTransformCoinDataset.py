@@ -75,7 +75,7 @@ class LogReturnTransformCoinDataset(Dataset):
         matches = np.all(np.isclose(df[self.output_cols].values, initial_prices.numpy(), atol=1e-4), axis=1)
         initial_prices_index = np.where(matches)[0]
 
-        real_data_to_relate = torch.tensor(df[self.output_cols].iloc[(initial_prices_index).item(): (initial_prices_index+price_with_zero_cols_inverted_only_coin.shape[0]).item()].values).squeeze().float()
+        real_data_to_relate = torch.tensor(df[self.output_cols].iloc[initial_prices_index.item(): (initial_prices_index+price_with_zero_cols_inverted_only_coin.shape[0]).item()].values).squeeze().float()
         real_price_based_on_real_data = real_data_to_relate * torch.exp(price_with_zero_cols_inverted_only_coin)
 
         real_price_based_on_only_predictions = initial_prices * np.exp(np.cumsum(price_with_zero_cols_inverted_only_coin, axis=0))

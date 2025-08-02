@@ -17,6 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 from import_loss import import_loss
+from create_evaluation_graphs import create_evaluation_graphs
 
 def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights):
     # --- Base loss ---
@@ -205,20 +206,20 @@ def train_with_args(args):
     train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":1}
     val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":0}
     
-    inference_train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "training_dataset":1}
-    inference_val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "training_dataset":0}
+    train_inference_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": 0, "training_dataset":1}
+    val_inference_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "training_dataset":0}
     
     train_dataset = import_dataset(args.dataset_name, **train_dataset_kwargs)
     val_dataset = import_dataset(args.dataset_name, **val_dataset_kwargs)
     
-    inference_train_dataset = import_dataset(args.dataset_name, **inference_train_dataset_kwargs)
-    inference_val_dataset = import_dataset(args.dataset_name, **inference_val_dataset_kwargs)
+    train_inference_dataset = import_dataset(args.dataset_name, **train_inference_dataset_kwargs)
+    val_inference_dataset = import_dataset(args.dataset_name, **val_inference_dataset_kwargs)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
-    inference_train_loader = DataLoader(inference_train_dataset, batch_size=args.batch_size, shuffle=False)
-    inference_val_loader = DataLoader(inference_val_dataset, batch_size=args.batch_size, shuffle=False)
+    train_inference_loader = DataLoader(train_inference_dataset, batch_size=args.batch_size, shuffle=False)
+    val_inference_loader = DataLoader(val_inference_dataset, batch_size=args.batch_size, shuffle=False)
 
     additional_loss_fns = import_loss(args.additional_loss_fn_names)
 
@@ -227,7 +228,7 @@ def train_with_args(args):
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
                 teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss, additional_loss_fns=additional_loss_fns,
-                additional_loss_weights = args.additional_loss_weights, train_session_dir=train_session_dir, inference_dataloaders=(inference_train_loader,inference_val_loader),
+                additional_loss_weights = args.additional_loss_weights, train_session_dir=train_session_dir, inference_dataloaders=(train_inference_loader,val_inference_loader),
                 plot_weight_grad=args.plot_weight_grad)
 
 def train_model(model, model_name, output_coins, output_features, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
@@ -243,7 +244,7 @@ def train_model(model, model_name, output_coins, output_features, train_loader, 
     for epoch_idx in range(epochs):
         # --- Training ---
         model = model.train()
-        train_loss, individual_train_losses = 0.0, None
+        train_loss, train_individual_losses = 0.0, None
 
         for batch_idx, (batch_x, batch_y) in tqdm(enumerate(train_loader), desc="train_loader", leave=False):
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
@@ -281,18 +282,18 @@ def train_model(model, model_name, output_coins, output_features, train_loader, 
                         run_inference_and_plot(model, inference_dataloaders[1], train_session_dir, f'{model_name}_val_mid_step_{batch_idx}', epoch_idx, epochs, output_coins, output_features)
 
             train_loss += loss.item()
-            if individual_train_losses is not None:
-                individual_train_losses += np.array(individual_losses)
+            if train_individual_losses is not None:
+                train_individual_losses += np.array(individual_losses)
             else:
-                individual_train_losses = np.array(individual_losses)
+                train_individual_losses = np.array(individual_losses)
 
         train_loss /= len(train_loader)
-        individual_train_losses /= len(train_loader)
+        train_individual_losses /= len(train_loader)
         train_losses.append(train_loss)
 
         # --- val ---
         model = model.eval()
-        val_loss, individual_val_losses = 0.0, None
+        val_loss, val_individual_losses = 0.0, None
 
         with torch.no_grad():
             for batch_x, batch_y in tqdm(val_loader, desc="val_loader", leave=False):
@@ -302,16 +303,16 @@ def train_model(model, model_name, output_coins, output_features, train_loader, 
                 loss, individual_losses = loss_fn(model, output, batch_y, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights)
                 
                 val_loss += loss.item()
-                if individual_val_losses is not None:
-                    individual_val_losses += np.array(individual_losses)
+                if val_individual_losses is not None:
+                    val_individual_losses += np.array(individual_losses)
                 else:
-                    individual_val_losses = np.array(individual_losses)
+                    val_individual_losses = np.array(individual_losses)
         
         val_loss /= len(val_loader)
-        individual_val_losses /= len(val_loader)
+        val_individual_losses /= len(val_loader)
         val_losses.append(val_loss)
 
-        print(f'Epoch {epoch_idx:03d} | Train Loss: {train_loss:.4f} ({individual_train_losses}) \n         | Val Loss: {val_loss:.4f} ({individual_val_losses})')
+        print(f'Epoch {epoch_idx:03d} | Train Loss: {train_loss:.4f} ({train_individual_losses}) \n         | Val Loss: {val_loss:.4f} ({val_individual_losses})')
 
         # --- Checkpointing ---
         if val_loss < best_val_loss:
@@ -345,6 +346,8 @@ def train_model(model, model_name, output_coins, output_features, train_loader, 
     
     if plot_weight_grad:
         plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name)
+
+    create_evaluation_graphs(train_session_dir)
 
 def main():
     parser = argparse.ArgumentParser()
