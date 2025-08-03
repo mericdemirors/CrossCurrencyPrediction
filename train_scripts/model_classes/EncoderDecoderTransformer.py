@@ -20,7 +20,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class EncoderDecoderTransformer(nn.Module):
-    def __init__(self, input_features, output_features, output_window,  dropout, num_layers, hidden_dim, num_heads, teacher_forcing_ratio, output_col_indices_in_input_cols):
+    def __init__(self, input_features, output_features, output_window, dropout, num_layers, hidden_dim, num_heads, teacher_forcing_ratio, output_col_indices_in_input_cols):
         super().__init__()
         self.output_features = output_features
         self.output_window = output_window

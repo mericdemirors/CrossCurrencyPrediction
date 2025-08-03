@@ -2,11 +2,10 @@ import torch
 import torch.nn as nn
 
 class TCN(nn.Module):
-    def __init__(self, input_features, output_features, output_window, dropout, device):
+    def __init__(self, input_features, output_features, input_window, output_window, dropout):
         super(TCN, self).__init__()
         self.output_features = output_features
         self.output_window = output_window
-        self.device = device
 
         # first part with the conv1d layers, this layers capture the intra-feature correlations
         self.conv1d_1 = nn.Conv1d(in_channels=input_features, out_channels=input_features*2, kernel_size=3, groups=input_features)
@@ -44,6 +43,11 @@ class TCN(nn.Module):
         self.upscaler1 = nn.Conv1d(in_channels=input_features, out_channels=input_features*4, kernel_size=3, groups=input_features, padding="same")
         self.upscaler2 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=(5,5))
         self.upscaler3 = nn.Conv2d(in_channels=128, out_channels=32, kernel_size=(5,6), dilation=(1,2), stride=(1,2))
+
+        # do the initial call so we can initialize the dynamic self.conv2d_7 layer
+        with torch.no_grad():
+            initial_x = torch.rand((1, input_features, input_window))
+            self.call(initial_x, None)
 
     def forward(self, x):
         res_connect = x
@@ -107,7 +111,7 @@ class TCN(nn.Module):
             x = self.conv2d_7(x)
         else:
             # last layer is dynamically created depending on the input size, so we do it in the first forward pass
-            self.conv2d_7 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=(x.shape[2]-self.output_features+1, x.shape[3]-self.output_window+1)).to(self.device)
+            self.conv2d_7 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=(x.shape[2]-self.output_features+1, x.shape[3]-self.output_window+1))
             x = self.conv2d_7(x)
 
         return torch.squeeze(x)
