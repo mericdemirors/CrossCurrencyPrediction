@@ -114,7 +114,7 @@ def create_evaluation_graphs(train_session_dir):
             # this is the predictions of the model
             for trust, pred_series_to_plot in reversed(list(enumerate(pred_series_with_different_trusts))):
                 if trust == 0:
-                    plt.plot(pred_series_to_plot[i], label="Real Predictions", color="blue", alpha=1/(trust+1))
+                    plt.plot(pred_series_to_plot[i], label="Predictions", color="blue", alpha=1/(trust+1))
                 else:
                     plt.plot(pred_series_to_plot[i], label="Other Predictions", color="green", alpha=1/(trust+1))
 
@@ -133,7 +133,7 @@ def create_evaluation_graphs(train_session_dir):
     def plot_the_future_dataset_predictions(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         plt.figure(figsize=(20, 10))
 
-        pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label='Pred')
+        pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -184,7 +184,7 @@ def create_evaluation_graphs(train_session_dir):
 
             handles, labels = ax.get_legend_handles_labels()
             handles.append(pred_legend)
-            labels.append("Predictions")
+            labels.append("Future Predictions")
             by_label = OrderedDict(zip(reversed(labels), reversed(handles)))
             plt.legend(by_label.values(), by_label.keys())
             
@@ -208,7 +208,7 @@ def create_evaluation_graphs(train_session_dir):
             
             # this is the real price data directly from the source
             real_prices = df_preds[inference_dataset.output_cols].values.T[i]
-            plt.plot(real_prices, label="Real Prices", color="red")
+            plt.plot(real_prices, label="Prices", color="red")
 
             # this is the data from dataset, first scaled and then rescaled (used to see the divergence preprocess caused)
             ground_truth = rescaled_target_series_to_plot[i]
@@ -220,10 +220,10 @@ def create_evaluation_graphs(train_session_dir):
                 rescaled_pred_series_to_plot_based_on_real_data, rescaled_pred_series_to_plot_based_on_predictions = inference_dataset.rescale_to_real_price(pred_series_to_plot.T, initial_prices)
                 rescaled_pred_series_to_plot_based_on_real_data, rescaled_pred_series_to_plot_based_on_predictions = rescaled_pred_series_to_plot_based_on_real_data.T, rescaled_pred_series_to_plot_based_on_predictions.T
                 if trust == 0:
-                    plt.plot(rescaled_pred_series_to_plot_based_on_real_data[i], label="Daily Real Predictions", color="black", alpha=1/(trust+1))
-                    plt.plot(rescaled_pred_series_to_plot_based_on_predictions[i], label="Real Predictions", color="blue", alpha=1/(trust+1))
+                    plt.plot(rescaled_pred_series_to_plot_based_on_real_data[i], label="Daily Predictions", color="black", alpha=1/(trust+1))
+                    plt.plot(rescaled_pred_series_to_plot_based_on_predictions[i], label="Predictions", color="blue", alpha=1/(trust+1))
                 else:
-                    plt.plot(rescaled_pred_series_to_plot_based_on_real_data[i], label="Other Daily Real Predictions", color="black", alpha=1/(trust+1))
+                    plt.plot(rescaled_pred_series_to_plot_based_on_real_data[i], label="Other Daily Predictions", color="black", alpha=1/(trust+1))
                     plt.plot(rescaled_pred_series_to_plot_based_on_predictions[i], label="Other Predictions", color="green", alpha=1/(trust+1))
 
             plt.title(f'{output_cols[i]}')
@@ -250,7 +250,8 @@ def create_evaluation_graphs(train_session_dir):
 
         plt.figure(figsize=(20, 10))
 
-        pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label='Pred')
+        daily_pred_legend = Line2D([0], [0], color=(0.0, 0.0, 0.0, 1), label="Daily Future Predictions")
+        pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} price predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -258,7 +259,7 @@ def create_evaluation_graphs(train_session_dir):
             
             # this is the real price data directly from the source
             real_prices = df_preds[inference_dataset.output_cols].values.T[i]
-            plt.plot(real_prices, label="Real Prices", color="red")
+            plt.plot(real_prices, label="Prices", color="red")
 
             # this is the data from dataset, first scaled and then rescaled (used to see the divergence preprocess caused)
             ground_truth = rescaled_target_series_to_plot[i]
@@ -312,7 +313,6 @@ def create_evaluation_graphs(train_session_dir):
             lc = LineCollection(segments, colors=colors, linewidths=1)
             ax.add_collection(lc)
 
-
             tensor = stacked_rescaled_pred_series_on_predictions[i]
             num_of_intervals, output_window_len = tensor.shape
 
@@ -353,8 +353,10 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend()
 
             handles, labels = ax.get_legend_handles_labels()
+            handles.append(daily_pred_legend)
+            labels.append("Daily Future Predictions")
             handles.append(pred_legend)
-            labels.append("Predictions")
+            labels.append("Future Predictions")
             by_label = OrderedDict(zip(reversed(labels), reversed(handles)))
             plt.legend(by_label.values(), by_label.keys())
 
@@ -374,14 +376,14 @@ def create_evaluation_graphs(train_session_dir):
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
-            sns.kdeplot(data=ground_truth, fill=False, color='orange', label='Dataset')
+            sns.kdeplot(data=ground_truth, fill=False, color="orange", label="Dataset")
             
             # this is the predictions of the model
             for trust, pred_series_to_plot in reversed(list(enumerate(pred_series_with_different_trusts))):
                 if trust == 0:
-                    sns.kdeplot(data=pred_series_to_plot[i], fill=False, color='blue', label='Real Prediction', alpha=1/(trust+1))
+                    sns.kdeplot(data=pred_series_to_plot[i], fill=False, color="blue", label="Predictions", alpha=1/(trust+1))
                 else:
-                    sns.kdeplot(data=pred_series_to_plot[i], fill=False, color='green', label='Other Predictions', alpha=1/(trust+1))
+                    sns.kdeplot(data=pred_series_to_plot[i], fill=False, color="green", label="Other Predictions", alpha=1/(trust+1))
 
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
