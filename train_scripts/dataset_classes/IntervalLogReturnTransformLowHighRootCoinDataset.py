@@ -95,7 +95,7 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
         price_with_zero_cols = np.zeros((price.shape[0], len(self.df.columns)))
         price_with_zero_cols[:, self.output_col_indices] = price
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
-        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices])
+        price_with_zero_cols_inverted_only_coin = torch.tensor(price_with_zero_cols_inverted[:, self.output_col_indices]).float()
 
         # till here, we didn't do anything with the low high
         price_with_zero_cols_inverted_only_coin[:, self.low_high_col_indices_in_output] = low_high_prices.float()
