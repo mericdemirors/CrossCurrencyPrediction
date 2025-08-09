@@ -95,6 +95,7 @@ def create_evaluation_graphs(train_session_dir):
     t0 = t1 - delta
     val_initial_prices = torch.tensor(val_df.loc[str(t0)][output_cols].values).unsqueeze(0)
 
+    """ THIS IS DOING THE SAME THING WITH THE BELOW ONE, JUST WITH A LITTLE TWIST. BELOW ONE LOOKS BETTER
     def plot_the_dataset_predictions(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         # prepend zeros for different trust values
         pred_series_with_different_trusts = []
@@ -102,6 +103,7 @@ def create_evaluation_graphs(train_session_dir):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
         plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Blue: price_t+1 from price_t, Greens: price_t+i from price_t where i>1', fontsize=12)
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -129,10 +131,12 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())    
 
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/predictions_on_the_dataset_{dataset_portion}.png'))
-
+    """
+    
     def plot_the_future_dataset_predictions(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         plt.figure(figsize=(20, 10))
-
+        plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Blue: price_t+i from price_t where i>0, fading away for further predictions', fontsize=12)
+        
         pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset predictions', leave=False):
@@ -190,6 +194,7 @@ def create_evaluation_graphs(train_session_dir):
             
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_dataset_{dataset_portion}.png'))
 
+    """ THIS IS DOING THE SAME THING WITH THE BELOW ONE, JUST WITH A LITTLE TWIST. BELOW ONE LOOKS BETTER
     def plot_the_price_predictions(inference_dataset, learned_dataframe_crop, initial_prices, pred_series, df_preds, dataset_portion):
         # rescale the dataset values into real prices
         rescaled_target_series_to_plot, _ = inference_dataset.rescale_to_real_price(torch.from_numpy(learned_dataframe_crop[inference_dataset.output_cols].values), initial_prices)
@@ -201,6 +206,7 @@ def create_evaluation_graphs(train_session_dir):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
         plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Red: real prices from API, Orange: re-scaled prices from dataset\'s normalization (should overlap with red)\nBlue: price_t+1 from price_t where price_t is taken from previous prediction, Black: price_t+1 from price_t where price_t is the real price of previous interval\nGreens: price_t+i from price_t where i>1', fontsize=12)
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} price predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -237,6 +243,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())    
 
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/predictions_on_the_prices_{dataset_portion}.png'))
+    """
 
     def plot_the_future_price_predictions(inference_dataset, learned_dataframe_crop, initial_prices, pred_series, df_preds, dataset_portion):
         # rescale the dataset values into real prices
@@ -249,6 +256,7 @@ def create_evaluation_graphs(train_session_dir):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
         plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Red: real prices from API, Orange: re-scaled prices from dataset\'s normalization (should overlap with red)\nBlue: price_t+i from price_t where price_t is taken from previous prediction and i>0 , fading away for further predictions\nBlack: price_t+i from price_t where price_t is the real price of previous interval and i>0 , fading away for further predictions', fontsize=12)
 
         daily_pred_legend = Line2D([0], [0], color=(0.0, 0.0, 0.0, 1), label="Daily Future Predictions")
         pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
@@ -369,6 +377,7 @@ def create_evaluation_graphs(train_session_dir):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
         plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Distributions of predictions on the {dataset_portion} dataset.\n Blue: price_t+1 from price_t, Greens: price_t+i from price_t where i>1\nAll other plots check the temporal fit to the dataset, this plot checks overall ability to match real world p(x)', fontsize=12)
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset distributions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -399,13 +408,13 @@ def create_evaluation_graphs(train_session_dir):
 
 
     os.makedirs(os.path.join(train_session_dir, "evaluation_graphs"))
-    plot_the_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
-    plot_the_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
+    # plot_the_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
+    # plot_the_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
     plot_the_future_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_future_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
-    plot_the_dataset_distributoins(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
-    plot_the_dataset_distributoins(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
-    plot_the_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
-    plot_the_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
+    # plot_the_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
+    # plot_the_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
     plot_the_future_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
     plot_the_future_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
+    plot_the_dataset_distributoins(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
+    plot_the_dataset_distributoins(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")

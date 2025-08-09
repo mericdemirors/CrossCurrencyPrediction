@@ -146,7 +146,10 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
         
         plt.plot(target_series_to_plot[i], label="Ground Truth", color="orange")
         for trust, pred_series_to_plot in enumerate(pred_series_with_different_trusts):
-            plt.plot(pred_series_to_plot[i], label="Prediction", color="green", alpha=1/(trust+1))
+            if trust == 0:
+                plt.plot(pred_series_to_plot[i], label="Prediction", color="blue", alpha=1/(trust+1))
+            else:
+                plt.plot(pred_series_to_plot[i], label="Other Predictions", color="green", alpha=1/(trust+1))
 
         plt.title(f'{plot_names[i]}')
         plt.xlabel("Time")
