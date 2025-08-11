@@ -47,7 +47,8 @@ class EncoderDecoderGRU(nn.Module):
 
     def forward(self, x, target):
         x = x.permute(0, 2, 1)
-        target = target.permute(0, 2, 1)
+        if target is not None:
+            target = target.permute(0, 2, 1)
 
         # get the last data from training, pass it as the decoder's input
         last_x = x[:, -1, :]
