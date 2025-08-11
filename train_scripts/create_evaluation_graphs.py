@@ -52,6 +52,8 @@ def create_evaluation_graphs(train_session_dir):
 
     model = import_model(args.model_name, **model_kwargs)
     model.load_state_dict(torch.load(model_pt_path, weights_only=True))
+    if hasattr(model, "set_teacher_forcing_ratio"):
+        model.set_teacher_forcing_ratio(0)
 
     base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
@@ -123,7 +125,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Sample")
             plt.ylabel("Value")
-            plt.ylim(ground_truth.min(), ground_truth.max())
+            plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
             handles, labels = plt.gca().get_legend_handles_labels()
@@ -183,7 +185,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
-            plt.ylim(ground_truth.min(), ground_truth.max())
+            plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
             handles, labels = ax.get_legend_handles_labels()
@@ -193,6 +195,55 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())
             
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_dataset_{dataset_portion}.png'))
+
+    def plot_the_autoregressive_dataset_predictions(learned_dataframe_crop, inference_dataset, dataset_portion):
+        plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
+
+        for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset predictions', leave=False):
+            row_count = math.ceil(len(output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            
+            # this is the data from dataset
+            ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
+            plt.plot(ground_truth, label="Dataset", color="orange")
+
+            auto_regressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+            for e, interval in enumerate(range(len(inference_dataset))):
+                x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+                next_interval = model(x, None)
+                
+                auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+
+                if e == len(inference_dataset) - 1:
+                    auto_regressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+            
+            auto_regressive = auto_regressive_tensor[args.input_window:, inference_dataset.output_col_indices].T[i]
+            plt.plot(auto_regressive, label="Autoregressive Predictions", color="Blue")
+
+            cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(auto_regressive_tensor.shape[1])]
+            auto_regressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+            for e, interval in enumerate(range(len(inference_dataset))):
+                x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+                next_interval = model(x, None)
+                
+                auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+                auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
+
+                if e == len(inference_dataset) - 1:
+                    auto_regressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+            
+            auto_regressive_with_zeros = auto_regressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices].T[i]
+            
+            plt.plot(auto_regressive_with_zeros, label="Autoregressive Predictions With Zeros", color="Green")
+
+            plt.title(f'{output_cols[i]}')
+            plt.xlabel("Time")
+            plt.ylabel("Value")
+            plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
+            plt.legend()
+
+            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_dataset_{dataset_portion}.png'))
 
     """ THIS IS DOING THE SAME THING WITH THE BELOW ONE, JUST WITH A LITTLE TWIST. BELOW ONE LOOKS BETTER
     def plot_the_price_predictions(inference_dataset, learned_dataframe_crop, initial_prices, pred_series, df_preds, dataset_portion):
@@ -235,7 +286,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
-            plt.ylim(min(ground_truth.min(), real_prices.min()), max(ground_truth.max(), real_prices.max()))
+            plt.ylim(min(ground_truth.min(), real_prices.min())*0.9, max(ground_truth.max(), real_prices.max())*1.1)
             plt.legend()
 
             handles, labels = plt.gca().get_legend_handles_labels()
@@ -357,7 +408,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
-            plt.ylim(ground_truth.min(), ground_truth.max())
+            plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
             handles, labels = ax.get_legend_handles_labels()
@@ -369,6 +420,56 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())
 
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_prices_{dataset_portion}.png'))
+
+    def plot_the_autoregressive_price_predictions(learned_dataframe_crop, inference_dataset, initial_prices, dataset_portion):
+        plt.figure(figsize=(20, 10))
+        plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
+
+        for i in tqdm(range(len(output_cols)), desc=f'plotting output columns for {dataset_portion} dataset predictions', leave=False):
+            row_count = math.ceil(len(output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            
+            _, rescaled_target_series_to_plot = inference_dataset.rescale_to_real_price(torch.from_numpy(learned_dataframe_crop[inference_dataset.output_cols].values), initial_prices)
+            ground_truth = rescaled_target_series_to_plot.T[i]
+            plt.plot(ground_truth, label="Dataset", color="orange")
+
+            auto_regressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+            for e, interval in enumerate(range(len(inference_dataset))):
+                x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+                next_interval = model(x, None)
+                
+                auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+
+                if e == len(inference_dataset) - 1:
+                    auto_regressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+            
+            _, rescaled_autoregressive_series_to_plot = inference_dataset.rescale_to_real_price(auto_regressive_tensor[args.input_window:, inference_dataset.output_col_indices], initial_prices)
+            auto_regressive = rescaled_autoregressive_series_to_plot.T[i]
+            plt.plot(auto_regressive, label="Autoregressive Predictions", color="blue")
+
+            cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(auto_regressive_tensor.shape[1])]
+            auto_regressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+            for e, interval in enumerate(range(len(inference_dataset))):
+                x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+                next_interval = model(x, None)
+                
+                auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+                auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
+
+                if e == len(inference_dataset) - 1:
+                    auto_regressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+            
+            _, rescaled_autoregressive_zero_series_to_plot = inference_dataset.rescale_to_real_price(auto_regressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices], initial_prices)
+            auto_regressive_with_zeros = rescaled_autoregressive_zero_series_to_plot.T[i]
+            plt.plot(auto_regressive_with_zeros, label="Autoregressive Predictions", color="green")
+
+            plt.title(f'{output_cols[i]}')
+            plt.xlabel("Time")
+            plt.ylabel("Value")
+            plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
+            plt.legend()
+
+            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_dataset_{dataset_portion}.png'))
 
     def plot_the_dataset_distributoins(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         # prepend zeros for different trust values
@@ -412,9 +513,13 @@ def create_evaluation_graphs(train_session_dir):
     # plot_the_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
     plot_the_future_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_future_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
+    plot_the_autoregressive_dataset_predictions(train_learned_dataframe_crop, train_inference_dataset, "train")
+    plot_the_autoregressive_dataset_predictions(val_learned_dataframe_crop, val_inference_dataset, "val")
     # plot_the_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
     # plot_the_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
     plot_the_future_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
     plot_the_future_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
+    plot_the_autoregressive_price_predictions(train_learned_dataframe_crop, train_inference_dataset, train_initial_prices, "train")
+    plot_the_autoregressive_price_predictions(val_learned_dataframe_crop, val_inference_dataset, val_initial_prices, "val")
     plot_the_dataset_distributoins(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_dataset_distributoins(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
