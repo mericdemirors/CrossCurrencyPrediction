@@ -519,7 +519,7 @@ def create_evaluation_graphs(train_session_dir):
     # plot_the_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
     plot_the_future_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_future_dataset_predictions(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
-    plot_the_autoregressive_dataset_predictions(train_learned_dataframe_crop, train_inference_dataset, "train")
+    # plot_the_autoregressive_dataset_predictions(train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_autoregressive_dataset_predictions(val_learned_dataframe_crop, val_inference_dataset, "val")
     # plot_the_price_predictions(train_inference_dataset, train_learned_dataframe_crop, train_initial_prices, train_pred_series, train_df_preds, "train")
     # plot_the_price_predictions(val_inference_dataset, val_learned_dataframe_crop, val_initial_prices, val_pred_series, val_df_preds, "val")
