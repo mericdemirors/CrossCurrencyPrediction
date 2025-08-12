@@ -249,7 +249,7 @@ def create_evaluation_graphs(train_session_dir):
             for e, interval in enumerate(range(len(inference_dataset))):
                 x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
                 with torch.no_grad():
-                    next_interval = model(x, None)
+                    next_interval = model.call(x, None)
                 
                 auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
 
@@ -264,7 +264,7 @@ def create_evaluation_graphs(train_session_dir):
             for e, interval in enumerate(range(len(inference_dataset))):
                 x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
                 with torch.no_grad():
-                    next_interval = model(x, None)
+                    next_interval = model.call(x, None)
                 
                 auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
                 auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
@@ -468,7 +468,7 @@ def create_evaluation_graphs(train_session_dir):
         for e, interval in enumerate(range(len(inference_dataset))):
             x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
             with torch.no_grad():
-                next_interval = model(x, None)
+                next_interval = model.call(x, None)
             
             auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
 
@@ -480,7 +480,7 @@ def create_evaluation_graphs(train_session_dir):
         for e, interval in enumerate(range(len(inference_dataset))):
             x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
             with torch.no_grad():
-                next_interval = model(x, None)
+                next_interval = model.call(x, None)
             
             auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
             auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
