@@ -237,6 +237,30 @@ def create_evaluation_graphs(train_session_dir):
         plt.figure(figsize=(20, 10))
         plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
 
+        autoregressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+        for e, interval in enumerate(range(len(inference_dataset))):
+            x = autoregressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+            with torch.no_grad():
+                next_interval = model.call(x, None)
+            
+            autoregressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+
+            if e == len(inference_dataset) - 1:
+                autoregressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+
+        cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(autoregressive_tensor.shape[1])]
+        autoregressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+        for e, interval in enumerate(range(len(inference_dataset))):
+            x = autoregressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+            with torch.no_grad():
+                next_interval = model.call(x, None)
+            
+            autoregressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+            autoregressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
+
+            if e == len(inference_dataset) - 1:
+                autoregressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+
         for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
             plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
@@ -244,37 +268,12 @@ def create_evaluation_graphs(train_session_dir):
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
             plt.plot(ground_truth, label="Dataset", color="orange", zorder=1)
-
-            auto_regressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
-            for e, interval in enumerate(range(len(inference_dataset))):
-                x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
-                with torch.no_grad():
-                    next_interval = model.call(x, None)
-                
-                auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
-
-                if e == len(inference_dataset) - 1:
-                    auto_regressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
             
-            auto_regressive = auto_regressive_tensor[args.input_window:, inference_dataset.output_col_indices].T[i]
-            plt.plot(auto_regressive, label="Autoregressive Predictions", color="Blue", zorder=3)
-
-            cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(auto_regressive_tensor.shape[1])]
-            auto_regressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
-            for e, interval in enumerate(range(len(inference_dataset))):
-                x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
-                with torch.no_grad():
-                    next_interval = model.call(x, None)
-                
-                auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
-                auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
-
-                if e == len(inference_dataset) - 1:
-                    auto_regressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+            autoregressive_col = autoregressive_tensor[args.input_window:, inference_dataset.output_col_indices].T[i]
+            plt.plot(autoregressive_col, label="Autoregressive Predictions", color="Blue", zorder=3)
             
-            auto_regressive_with_zeros = auto_regressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices].T[i]
-            
-            plt.plot(auto_regressive_with_zeros, label="Autoregressive Predictions With Zeros", color="Green", zorder=2)
+            autoregressive_col_with_zeros = autoregressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices].T[i]
+            plt.plot(autoregressive_col_with_zeros, label="Autoregressive Predictions With Zeros", color="Green", zorder=2)
 
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
@@ -464,29 +463,29 @@ def create_evaluation_graphs(train_session_dir):
         plt.figure(figsize=(20, 10))
         plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
 
-        auto_regressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+        autoregressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
         for e, interval in enumerate(range(len(inference_dataset))):
-            x = auto_regressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+            x = autoregressive_tensor[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
             with torch.no_grad():
                 next_interval = model.call(x, None)
             
-            auto_regressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+            autoregressive_tensor[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
 
             if e == len(inference_dataset) - 1:
-                auto_regressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+                autoregressive_tensor[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
 
-        cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(auto_regressive_tensor.shape[1])]
-        auto_regressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
+        cols_to_zero_out = [False if x in inference_dataset.output_col_indices else True for x in range(autoregressive_tensor.shape[1])]
+        autoregressive_tensor_with_zeros = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
         for e, interval in enumerate(range(len(inference_dataset))):
-            x = auto_regressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
+            x = autoregressive_tensor_with_zeros[interval:interval+args.input_window].T.unsqueeze(0).float().to(model_kwargs["device"])
             with torch.no_grad():
                 next_interval = model.call(x, None)
             
-            auto_regressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
-            auto_regressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
+            autoregressive_tensor_with_zeros[interval+args.input_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T[0]
+            autoregressive_tensor_with_zeros[interval+args.input_window, cols_to_zero_out] = 0
 
             if e == len(inference_dataset) - 1:
-                auto_regressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
+                autoregressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
@@ -496,13 +495,13 @@ def create_evaluation_graphs(train_session_dir):
             ground_truth = rescaled_target_series_to_plot.T[i]
             plt.plot(ground_truth, label="Dataset", color="orange", zorder=1)
             
-            _, rescaled_autoregressive_series_to_plot = inference_dataset.rescale_to_real_price(auto_regressive_tensor[args.input_window:, inference_dataset.output_col_indices], initial_prices)
-            auto_regressive = rescaled_autoregressive_series_to_plot.T[i]
-            plt.plot(auto_regressive, label="Autoregressive Predictions", color="blue", zorder=3)
+            _, rescaled_autoregressive_series_to_plot = inference_dataset.rescale_to_real_price(autoregressive_tensor[args.input_window:, inference_dataset.output_col_indices], initial_prices)
+            rescaled_autoregressive_col = rescaled_autoregressive_series_to_plot.T[i]
+            plt.plot(rescaled_autoregressive_col, label="Autoregressive Predictions", color="blue", zorder=3)
             
-            _, rescaled_autoregressive_zero_series_to_plot = inference_dataset.rescale_to_real_price(auto_regressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices], initial_prices)
-            auto_regressive_with_zeros = rescaled_autoregressive_zero_series_to_plot.T[i]
-            plt.plot(auto_regressive_with_zeros, label="Autoregressive Predictions", color="green", zorder=2)
+            _, rescaled_autoregressive_zero_series_to_plot = inference_dataset.rescale_to_real_price(autoregressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices], initial_prices)
+            rescaled_autoregressive_col_with_zeros = rescaled_autoregressive_zero_series_to_plot.T[i]
+            plt.plot(rescaled_autoregressive_col_with_zeros, label="Autoregressive Predictions", color="green", zorder=2)
 
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
