@@ -17,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 from import_loss import import_loss
-from create_evaluation_graphs import create_evaluation_graphs
+from evaluate import create_evaluation_graphs
 
 def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights):
     # --- Base loss ---
@@ -144,12 +144,12 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
         row_count = math.ceil(len(plot_names)**0.5)
         plt.subplot(row_count, math.ceil(len(plot_names)//row_count), i + 1)
         
-        plt.plot(target_series_to_plot[i], label="Ground Truth", color="orange")
+        plt.plot(target_series_to_plot[i], label="Ground Truth", color="orange", zorder=1)
         for trust, pred_series_to_plot in enumerate(pred_series_with_different_trusts):
-            if trust == 0:
-                plt.plot(pred_series_to_plot[i], label="Prediction", color="blue", alpha=1/(trust+1))
+            if trust != 0:
+                plt.plot(pred_series_to_plot[i], label="Other Predictions", color="green", alpha=1/(trust+1), zorder=2)
             else:
-                plt.plot(pred_series_to_plot[i], label="Other Predictions", color="green", alpha=1/(trust+1))
+                plt.plot(pred_series_to_plot[i], label="Prediction", color="blue", alpha=1/(trust+1), zorder=3)
 
         plt.title(f'{plot_names[i]}')
         plt.xlabel("Time")
