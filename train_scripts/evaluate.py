@@ -288,39 +288,6 @@ def create_evaluation_graphs(train_session_dir):
             stacked_rescaled_pred_series_on_predictions = torch.stack(rescaled_pred_series_on_predictions)
             stacked_rescaled_pred_series_on_predictions = stacked_rescaled_pred_series_on_predictions.permute((2,1,0))
 
-            tensor = stacked_rescaled_pred_series_on_real_data[i]
-            num_of_intervals, output_window_len = tensor.shape
-
-            # X axis indices, all predictions shifted one tick right
-            x = torch.arange(output_window_len).unsqueeze(0) + torch.arange(num_of_intervals).unsqueeze(1)
-
-            # if we have 8 output window that means we have 7 segments in our line.
-            # So we create the start and end coordinated for each output_window-1 segment in one prediction
-            x_start = x[:, :-1]
-            x_end = x[:, 1:]
-            y_start = tensor[:, :-1]
-            y_end = tensor[:, 1:]
-
-            # this is the whole segments we will plot
-            segments = np.stack([ np.stack([x_start, y_start], axis=2),
-                                np.stack([x_end, y_end], axis=2)], axis=2).reshape(-1, 2, 2)
-
-            # set up the fading away trust
-            alpha_fade = np.linspace(1.0, 0.1, output_window_len - 1) ** 4
-            # and repeat them so we get the same fading away effect for all predictionss' 7 segments
-            alphas = np.tile(alpha_fade, num_of_intervals)
-
-            # set up the colors
-            colors = np.ones((segments.shape[0], 4))
-            colors[:, 0] = 0.0  # R
-            colors[:, 1] = 0.0  # G
-            colors[:, 2] = 0.0  # B
-            colors[:, 3] = alphas  # Alpha fade
-
-            ax = plt.gca()
-            lc = LineCollection(segments, colors=colors, linewidths=1)
-            ax.add_collection(lc)
-
             tensor = stacked_rescaled_pred_series_on_predictions[i]
             num_of_intervals, output_window_len = tensor.shape
 
@@ -348,6 +315,39 @@ def create_evaluation_graphs(train_session_dir):
             colors[:, 0] = 0.2  # R
             colors[:, 1] = 0.4  # G
             colors[:, 2] = 0.8  # B
+            colors[:, 3] = alphas  # Alpha fade
+
+            ax = plt.gca()
+            lc = LineCollection(segments, colors=colors, linewidths=1)
+            ax.add_collection(lc)
+
+            tensor = stacked_rescaled_pred_series_on_real_data[i]
+            num_of_intervals, output_window_len = tensor.shape
+
+            # X axis indices, all predictions shifted one tick right
+            x = torch.arange(output_window_len).unsqueeze(0) + torch.arange(num_of_intervals).unsqueeze(1)
+
+            # if we have 8 output window that means we have 7 segments in our line.
+            # So we create the start and end coordinated for each output_window-1 segment in one prediction
+            x_start = x[:, :-1]
+            x_end = x[:, 1:]
+            y_start = tensor[:, :-1]
+            y_end = tensor[:, 1:]
+
+            # this is the whole segments we will plot
+            segments = np.stack([ np.stack([x_start, y_start], axis=2),
+                                np.stack([x_end, y_end], axis=2)], axis=2).reshape(-1, 2, 2)
+
+            # set up the fading away trust
+            alpha_fade = np.linspace(1.0, 0.1, output_window_len - 1) ** 4
+            # and repeat them so we get the same fading away effect for all predictionss' 7 segments
+            alphas = np.tile(alpha_fade, num_of_intervals)
+
+            # set up the colors
+            colors = np.ones((segments.shape[0], 4))
+            colors[:, 0] = 0.0  # R
+            colors[:, 1] = 0.0  # G
+            colors[:, 2] = 0.0  # B
             colors[:, 3] = alphas  # Alpha fade
 
             ax = plt.gca()
