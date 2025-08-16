@@ -109,7 +109,7 @@ def create_evaluation_graphs(train_session_dir):
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} dataset distributions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -142,7 +142,7 @@ def create_evaluation_graphs(train_session_dir):
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -225,7 +225,7 @@ def create_evaluation_graphs(train_session_dir):
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -263,7 +263,7 @@ def create_evaluation_graphs(train_session_dir):
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} price predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
             
             # this is the real price data directly from the source
             real_prices = df_preds[inference_dataset.output_cols].values.T[i]
@@ -400,7 +400,7 @@ def create_evaluation_graphs(train_session_dir):
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
             row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)//row_count), i + 1)
+            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
             
             _, rescaled_target_series_to_plot = inference_dataset.rescale_to_real_price(torch.from_numpy(learned_dataframe_crop[inference_dataset.output_cols].values), initial_prices)
             ground_truth = rescaled_target_series_to_plot.T[i]
@@ -412,7 +412,7 @@ def create_evaluation_graphs(train_session_dir):
             
             _, rescaled_autoregressive_zero_series_to_plot = inference_dataset.rescale_to_real_price(autoregressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices], initial_prices)
             rescaled_autoregressive_col_with_zeros = rescaled_autoregressive_zero_series_to_plot.T[i]
-            plt.plot(rescaled_autoregressive_col_with_zeros, label="Autoregressive Predictions", color="green", zorder=2)
+            plt.plot(rescaled_autoregressive_col_with_zeros, label="Autoregressive Predictions With Zeros", color="green", zorder=2)
 
             plt.title(f'{output_cols[i]}')
             plt.xlabel("Time")
@@ -420,9 +420,9 @@ def create_evaluation_graphs(train_session_dir):
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
-            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_dataset_{dataset_portion}.png'))
+            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_prices_{dataset_portion}.png'))
 
-    os.makedirs(os.path.join(train_session_dir, "evaluation_graphs"))
+    os.makedirs(os.path.join(train_session_dir, "evaluation_graphs"), exist_ok=True)
     plot_the_dataset_distributoins(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
     plot_the_dataset_distributoins(val_pred_series, val_learned_dataframe_crop, val_inference_dataset, "val")
     plot_the_future_dataset_predictions(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")

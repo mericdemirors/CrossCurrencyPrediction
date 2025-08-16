@@ -17,7 +17,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from import_model import import_model
 from import_dataset import import_dataset
 from import_loss import import_loss
-from evaluate import create_evaluation_graphs
 
 def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, additional_loss_fns, additional_loss_weights):
     # --- Base loss ---
@@ -142,7 +141,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
 
     for i in range(len(plot_names)):
         row_count = math.ceil(len(plot_names)**0.5)
-        plt.subplot(row_count, math.ceil(len(plot_names)//row_count), i + 1)
+        plt.subplot(row_count, math.ceil(len(plot_names)/row_count), i + 1)
         
         plt.plot(target_series_to_plot[i], label="Ground Truth", color="orange", zorder=1)
         for trust, pred_series_to_plot in enumerate(pred_series_with_different_trusts):
@@ -226,13 +225,15 @@ def train_with_args(args):
 
     additional_loss_fns = import_loss(args.additional_loss_fn_names)
 
-    train_model(model=model, model_name=args.model_name, output_coins=args.output_coins, output_features=args.output_features,
+    train_session_dir = train_model(model=model, model_name=args.model_name, output_coins=args.output_coins, output_features=args.output_features,
                 train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
                 early_stop_patience=args.early_stop_patience, optimizer=optimizer, scheduler=scheduler,
                 teacher_forcing_ratio_decrease=args.teacher_forcing_ratio_decrease, l1_loss_weight=args.l1_loss_weight,
                 l2_loss_weight=args.l2_loss_weight, loss_name=args.loss_name, loss_fn=loss, additional_loss_fns=additional_loss_fns,
                 additional_loss_weights = args.additional_loss_weights, train_session_dir=train_session_dir, inference_dataloaders=(train_inference_loader,val_inference_loader),
                 plot_weight_grad=args.plot_weight_grad)
+    
+    return train_session_dir
 
 def train_model(model, model_name, output_coins, output_features, train_loader, val_loader, epochs, epoch_plot_step, early_stop_patience, optimizer, scheduler, teacher_forcing_ratio_decrease,
                 l1_loss_weight, l2_loss_weight, loss_name, loss_fn, additional_loss_fns, additional_loss_weights, train_session_dir,
@@ -350,7 +351,7 @@ def train_model(model, model_name, output_coins, output_features, train_loader, 
     if plot_weight_grad:
         plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name)
 
-    create_evaluation_graphs(train_session_dir)
+    return train_session_dir
 
 def main():
     parser = argparse.ArgumentParser()
@@ -392,7 +393,8 @@ def main():
     parser.add_argument("--lr_decrease", type=float, default=0.95) # multiplicative decrease for the learning rate scheduler
     parser.add_argument("--early_stop_patience", type=int, default=5) # early stop after no improvement in validation score
     args = parser.parse_args()
-    train_with_args(args)
+    train_session_dir = train_with_args(args)
+    return train_session_dir
 
 if __name__ == "__main__":
     main()
