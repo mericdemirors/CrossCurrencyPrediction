@@ -54,7 +54,7 @@ def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, a
     return total_loss, [base_loss.item(), *feature_wise_losses, l1_reg.item(), l1_reg.item(), *additional_losses]
 
 def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_name):
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 9))
     plt.plot(train_losses, label="Train Loss", color="blue")
     plt.plot(val_losses, label="Val Loss", color="orange")
     plt.xlabel("Epoch")
@@ -80,7 +80,7 @@ def plot_losses(train_losses, val_losses, lr_steps, train_session_dir, model_nam
     plt.close()
 
 def plot_weight_grad_norms(weight_norms_epoch, grad_norms_epoch, train_session_dir, model_name):
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 9))
     plt.plot(weight_norms_epoch, label="Weight", color="blue")
     plt.plot(grad_norms_epoch, label="Grad", color="orange")
     plt.xlabel("Epoch Steps")
@@ -137,7 +137,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
         pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:,trust], pred_series[:,-1,trust:]), dim=1))
 
     plot_names = [f'{c}_{f}' for c in output_coins for f in output_features]
-    plt.figure(figsize=(20, 10))
+    plt.figure(figsize=(30, 15))
 
     for i in range(len(plot_names)):
         row_count = math.ceil(len(plot_names)**0.5)
@@ -170,13 +170,7 @@ def train_with_args(args):
     output_col_indices_in_input_cols = [input_cols.index(col) for col in output_cols]
     target_coin_indices = [args.input_coins.index(c) for c in args.output_coins]
 
-    if len(set(output_cols).difference(set(input_cols))) != 0:
-        print(set(output_col_indices_in_input_cols))
-        print(set(output_cols))
-        print("ALL OUTPUT COLUMNS SHOULD BE IN THE INPUT COLUMN, OR SOME MODEL INDEXINGS MAY BREAK")
-        print(6/0)
-
-    model_kwargs = {"input_features": len(args.input_coins)*len(args.input_features), "output_features": len(args.output_coins)*len(args.output_features),
+    model_kwargs = {"input_features": len(input_cols), "output_features": len(output_cols),
     "input_window": args.input_window, "output_window": args.output_window,
     "dropout": args.dropout, "num_layers": args.num_layers, "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
     "teacher_forcing_ratio": args.teacher_forcing_ratio, "input_cols":input_cols, "output_cols":output_cols,
@@ -203,7 +197,8 @@ def train_with_args(args):
     base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
-    "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
+    "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles,
+    "merge_count": args.merge_count, "train_session_dir": train_session_dir}
     
     train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":1}
     val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":0}
@@ -376,8 +371,9 @@ def main():
     parser.add_argument("--augmentation_constant_c", type=float, default=0) # min max limit for the constant to be added to all samples
     parser.add_argument("--augmentation_scale_s", type=float, default=0) # min max limit for the scale to be multiplied with all samples
     parser.add_argument("--transform_name", type=str, default="QuantileTransformer") # sklearn.preprocessing QuantileTransformer or PowerTransformer to use
-    parser.add_argument("--output_distribution", type=str, default="normal") # sklearn.preprocessing QuantileTransformer distribution type (only for the LogReturnTransformCoinDataset dataset)
-    parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles (only for the LogReturnTransformCoinDataset dataset)
+    parser.add_argument("--output_distribution", type=str, default="normal") # sklearn.preprocessing QuantileTransformer distribution type
+    parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles
+    parser.add_argument("--merge_count", type=int, default=2) # how many intervals to merge for the MergedIntervalsLogReturnTransformCoinDataset dataset
     parser.add_argument("--plot_weight_grad", type=int, default=0) # whether to plot weight and gradient plots at each epoch
     parser.add_argument("--loss_name", type=str, default="") # name of the loss to use
     parser.add_argument("--additional_loss_fn_names", type=str, nargs='+', default=[]) # names of additional losses to apply

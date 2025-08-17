@@ -59,7 +59,8 @@ def create_evaluation_graphs(train_session_dir):
     base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
-    "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, "train_session_dir": train_session_dir}
+    "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, 
+    "merge_count": args.merge_count, "train_session_dir": train_session_dir}
 
     val_inference_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": 0, "training_dataset":0}
     val_inference_dataset = import_dataset(args.dataset_name, **val_inference_dataset_kwargs)
@@ -80,6 +81,8 @@ def create_evaluation_graphs(train_session_dir):
 
     # REAL PRICE DATA
     train_df = pd.read_csv(data["train_csv_path"], index_col="open_time")
+    if hasattr(train_inference_dataset, "set_raw_dataset_for_evaluation"):
+        train_df = train_inference_dataset.set_raw_dataset_for_evaluation(train_df)
     train_df_preds = train_df.loc[train_learned_dataframe_crop.index]
     # we take the data["input_window"]th data as the initial price instead of data["input_window"]-1
     # it's because we are shifting the dates 1 interval back during the preprocessing, so the first day is kinda wasted for the lof return computations
@@ -91,6 +94,8 @@ def create_evaluation_graphs(train_session_dir):
     train_initial_prices = torch.tensor(train_df.loc[str(t0)][output_cols].values).unsqueeze(0)
 
     val_df = pd.read_csv(data["val_csv_path"], index_col="open_time")
+    if hasattr(val_inference_dataset, "set_raw_dataset_for_evaluation"):
+        val_df = val_inference_dataset.set_raw_dataset_for_evaluation(val_df)
     val_df_preds = val_df.loc[val_learned_dataframe_crop.index]
     t1 = datetime.strptime(val_learned_dataframe_crop.index[0], "%Y-%m-%d %H:%M:%S")
     t2 = datetime.strptime(val_learned_dataframe_crop.index[1], "%Y-%m-%d %H:%M:%S")
@@ -104,7 +109,7 @@ def create_evaluation_graphs(train_session_dir):
         for trust in range(pred_series.shape[2]):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
-        plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(30, 15))
         plt.suptitle(f'Distributions of predictions on the {dataset_portion} dataset.\n Blue: price_t+1 from price_t, Greens: price_t+i from price_t where i>1\nAll other plots check the temporal fit to the dataset, this plot checks overall ability to match real world p(x)', fontsize=12)
 
         for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} dataset distributions', leave=False):
@@ -135,7 +140,7 @@ def create_evaluation_graphs(train_session_dir):
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/distributions_on_the_dataset_{dataset_portion}.png'))
     
     def plot_the_future_dataset_predictions(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
-        plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(30, 15))
         plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Blue: price_t+i from price_t where i>0, fading away for further predictions', fontsize=12)
         
         pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
@@ -196,7 +201,7 @@ def create_evaluation_graphs(train_session_dir):
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_dataset_{dataset_portion}.png'))
 
     def plot_the_autoregressive_dataset_predictions(learned_dataframe_crop, inference_dataset, dataset_portion):
-        plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(30, 15))
         plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
 
         autoregressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()
@@ -255,7 +260,7 @@ def create_evaluation_graphs(train_session_dir):
         for trust in range(pred_series.shape[2]):
             pred_series_with_different_trusts.append(torch.cat((torch.zeros(pred_series.shape[0], trust), pred_series[:,:-1,trust], pred_series[:,-1,trust:]), dim=1))
 
-        plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(30, 15))
         plt.suptitle(f'Predictions on the {dataset_portion} dataset.\n Red: real prices from API, Orange: re-scaled prices from dataset\'s normalization (should overlap with red)\nBlue: price_t+i from price_t where price_t is taken from previous prediction and i>0 , fading away for further predictions\nBlack: price_t+i from price_t where price_t is the real price of previous interval and i>0 , fading away for further predictions', fontsize=12)
 
         daily_pred_legend = Line2D([0], [0], color=(0.0, 0.0, 0.0, 1), label="Daily Future Predictions")
@@ -371,7 +376,7 @@ def create_evaluation_graphs(train_session_dir):
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_prices_{dataset_portion}.png'))
 
     def plot_the_autoregressive_price_predictions(learned_dataframe_crop, inference_dataset, initial_prices, dataset_portion):
-        plt.figure(figsize=(20, 10))
+        plt.figure(figsize=(30, 15))
         plt.suptitle(f'Autoregressive predictions on the {dataset_portion} dataset.\n Blue: filling the missing (non-predicted) input features from ground truth, Green: filling the missing (non-predicted) input features with zeros', fontsize=12)
 
         autoregressive_tensor = torch.tensor(inference_dataset.df[inference_dataset.input_cols].values).float()

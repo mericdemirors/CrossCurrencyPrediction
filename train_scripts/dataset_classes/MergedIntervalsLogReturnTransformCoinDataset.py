@@ -9,34 +9,42 @@ from sklearn.preprocessing import QuantileTransformer, PowerTransformer
 
 class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
     def __init__(self, csv_path, input_coins, input_features, output_coins, output_features, input_window, output_window,
-                 transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
+                 merge_count, transform_name, output_distribution, n_quantiles, train_session_dir, training_dataset,
                  augmentation_p, augmentation_noise_std, augmentation_constant_c, augmentation_scale_s):
         self.csv_path = csv_path
         self.df = pd.read_csv(csv_path, index_col="open_time")
 
-        df_left = self.df.iloc[range(0, len(self.df), 2)]
-        df_right = self.df.iloc[range(1, len(self.df), 2)]
+        self.merge_count = merge_count
+        merges = []
+        for i in range(merge_count):
+            merge_df = self.df.iloc[range(0, len(self.df), merge_count)]
+            merge_df = merge_df.reset_index().add_suffix("_" + str(i))
+            merges.append(merge_df)
 
-        self.df = pd.concat([df_left.reset_index().add_suffix("_left"), df_right.reset_index().add_suffix("_right")], axis=1)
-        self.df = self.df.drop(columns=["open_time_right"])
-        self.df = self.df.rename(columns={"open_time_left": "open_time"})
+        self.df = pd.concat(merges, axis=1)
+        self.df.dropna(inplace=True)
+        self.df = self.df.rename(columns={"open_time_0": "open_time"})
+        self.df = self.df.set_index("open_time")
+        self.df = self.df.drop(columns=[col for col in self.df.columns if "open_time" in col])
 
-        coins_to_get_mid_for = list(set(input_coins + output_coins))
-        for c in coins_to_get_mid_for:
-            self.df[f"{c}_mid"] = (self.df[f"{c}_close_left"] + self.df[f"{c}_open_right"]) / 2
-
-        cols_to_drop = [col for col in self.df.columns if ("_open_right" in col) or ("_close_left" in col)]
-        self.df = self.df.drop(columns=cols_to_drop)
+        self.input_coins = input_coins
+        self.output_coins = output_coins
+        for i in range(1, merge_count):
+            for c in list(set(input_coins + output_coins)):
+                self.df[f"{c}_open_{i}"] = (self.df[f"{c}_close_{i-1}"] + self.df[f"{c}_open_{i}"]) / 2
+                self.df = self.df.drop(columns=[f"{c}_close_{i-1}"])
 
         new_order = sorted(self.df.columns, key= lambda x: x.split("_")[0])
         self.df = self.df[new_order]
-        self.df = self.df.set_index("open_time")
-
+        
         self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
+        # input_features =[f for f in input_features for i in range(merge_count)]
         self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
+        self.input_cols = [col for col in self.df.columns for input_col in self.input_cols if input_col in col]
         self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
+        self.output_cols = [col for col in self.df.columns for output_col in self.output_cols if output_col in col]
         self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
         self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
 
@@ -90,6 +98,7 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
         real_price_based_on_real_data[0] = initial_prices.float()
 
         df = pd.read_csv(self.csv_path, index_col="open_time")
+        df = self.set_raw_dataset_for_evaluation(df)
         matches = np.all(np.isclose(df[self.output_cols].values, initial_prices.numpy(), atol=1e-4), axis=1)
         initial_prices_index = np.where(matches)[0]
 
@@ -104,6 +113,28 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
         #     real_price_based_on_real_data[t + 1] = real_data_to_relate * torch.exp(price_with_zero_cols_inverted_only_coin[t])
 
         return real_price_based_on_real_data, real_price_based_on_only_predictions
+
+    def set_raw_dataset_for_evaluation(self, raw_df):
+        merges = []
+        for i in range(self.merge_count):
+            merge_df = raw_df.iloc[range(0, len(raw_df), self.merge_count)]
+            merge_df = merge_df.reset_index().add_suffix("_" + str(i))
+            merges.append(merge_df)
+
+        raw_df = pd.concat(merges, axis=1)
+        raw_df.dropna(inplace=True)
+        raw_df = raw_df.rename(columns={"open_time_0": "open_time"})
+        raw_df = raw_df.set_index("open_time")
+        raw_df = raw_df.drop(columns=[col for col in raw_df.columns if "open_time" in col])
+
+        for i in range(1, self.merge_count):
+            for c in list(set(self.input_coins + self.output_coins)):
+                raw_df[f"{c}_open_{i}"] = (raw_df[f"{c}_close_{i-1}"] + raw_df[f"{c}_open_{i}"]) / 2
+                raw_df = raw_df.drop(columns=[f"{c}_close_{i-1}"])
+
+        new_order = sorted(raw_df.columns, key= lambda x: x.split("_")[0])
+        raw_df = raw_df[new_order]
+        return raw_df
 
     def augment(self, x):
         if torch.rand(1) < self.augmentation_p:
