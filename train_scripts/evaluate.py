@@ -33,7 +33,7 @@ def create_evaluation_graphs(train_session_dir):
     val_pred_name = f'{model_name}_val_pred_series.pt'
 
     target_and_pred_names = [train_pred_name, val_pred_name]
-    model_pt_name = [x for x in os.listdir(train_session_dir) if x.endswith(".pt") and x not in target_and_pred_names][0]
+    model_pt_name = [x for x in os.listdir(train_session_dir) if x.endswith(".pt") and "series" not in x][0]
     model_pt_path = os.path.join(train_session_dir, model_pt_name)
 
     args = argparse.Namespace(**data)
