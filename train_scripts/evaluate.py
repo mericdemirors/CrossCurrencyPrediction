@@ -90,7 +90,7 @@ def create_evaluation_graphs(train_session_dir):
     t2 = datetime.strptime(train_learned_dataframe_crop.index[1], "%Y-%m-%d %H:%M:%S")
     delta = t2 - t1
     t0 = t1 - delta
-    train_initial_prices = torch.tensor(train_df.loc[str(t0)][output_cols].values).unsqueeze(0)
+    train_initial_prices = torch.tensor(train_df.loc[str(t0)][train_inference_dataset.output_cols].values).unsqueeze(0)
 
     val_df = pd.read_csv(data["val_csv_path"], index_col="open_time")
     if hasattr(val_inference_dataset, "set_raw_dataset_for_evaluation"):
@@ -100,7 +100,7 @@ def create_evaluation_graphs(train_session_dir):
     t2 = datetime.strptime(val_learned_dataframe_crop.index[1], "%Y-%m-%d %H:%M:%S")
     delta = t2 - t1
     t0 = t1 - delta
-    val_initial_prices = torch.tensor(val_df.loc[str(t0)][output_cols].values).unsqueeze(0)
+    val_initial_prices = torch.tensor(val_df.loc[str(t0)][val_inference_dataset.output_cols].values).unsqueeze(0)
 
     def plot_the_dataset_distributoins(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         # prepend zeros for different trust values
@@ -111,9 +111,9 @@ def create_evaluation_graphs(train_session_dir):
         plt.figure(figsize=(30, 15))
         plt.suptitle(f'Distributions of predictions on the {dataset_portion} dataset.\n Blue: price_t+1 from price_t, Greens: price_t+i from price_t where i>1\nAll other plots check the temporal fit to the dataset, this plot checks overall ability to match real world p(x)', fontsize=12)
 
-        for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} dataset distributions', leave=False):
-            row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
+        for i in tqdm(range(len(inference_dataset.output_cols)), desc=f'plotting {dataset_portion} dataset distributions', leave=False):
+            row_count = math.ceil(len(inference_dataset.output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(inference_dataset.output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -126,7 +126,7 @@ def create_evaluation_graphs(train_session_dir):
                 else:
                     sns.kdeplot(data=pred_series_to_plot[i], fill=False, color="blue", label="Predictions", alpha=1/(trust+1))
 
-            plt.title(f'{output_cols[i]}')
+            plt.title(f'{inference_dataset.output_cols[i]}')
             plt.xlabel("Time")
             plt.xlim(ground_truth.min(), ground_truth.max())
             plt.ylabel("Value")
@@ -144,9 +144,9 @@ def create_evaluation_graphs(train_session_dir):
         
         pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
 
-        for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} dataset predictions', leave=False):
-            row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
+        for i in tqdm(range(len(inference_dataset.output_cols)), desc=f'plotting {dataset_portion} dataset predictions', leave=False):
+            row_count = math.ceil(len(inference_dataset.output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(inference_dataset.output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -185,7 +185,7 @@ def create_evaluation_graphs(train_session_dir):
             lc = LineCollection(segments, colors=colors, linewidths=1)
             ax.add_collection(lc)
 
-            plt.title(f'{output_cols[i]}')
+            plt.title(f'{inference_dataset.output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
@@ -227,9 +227,9 @@ def create_evaluation_graphs(train_session_dir):
             if e == len(inference_dataset) - 1:
                 autoregressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
 
-        for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
-            row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
+        for i in tqdm(range(len(inference_dataset.output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
+            row_count = math.ceil(len(inference_dataset.output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(inference_dataset.output_cols)/row_count), i + 1)
             
             # this is the data from dataset
             ground_truth = learned_dataframe_crop[inference_dataset.output_cols].values.T[i]
@@ -241,7 +241,7 @@ def create_evaluation_graphs(train_session_dir):
             autoregressive_col_with_zeros = autoregressive_tensor_with_zeros[args.input_window:, inference_dataset.output_col_indices].T[i]
             plt.plot(autoregressive_col_with_zeros, label="Autoregressive Predictions With Zeros", color="Green", zorder=2)
 
-            plt.title(f'{output_cols[i]}')
+            plt.title(f'{inference_dataset.output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
@@ -265,9 +265,9 @@ def create_evaluation_graphs(train_session_dir):
         daily_pred_legend = Line2D([0], [0], color=(0.0, 0.0, 0.0, 1), label="Daily Future Predictions")
         pred_legend = Line2D([0], [0], color=(0.2, 0.4, 0.8, 1), label="Future Predictions")
 
-        for i in tqdm(range(len(output_cols)), desc=f'plotting {dataset_portion} price predictions', leave=False):
-            row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
+        for i in tqdm(range(len(inference_dataset.output_cols)), desc=f'plotting {dataset_portion} price predictions', leave=False):
+            row_count = math.ceil(len(inference_dataset.output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(inference_dataset.output_cols)/row_count), i + 1)
             
             # this is the real price data directly from the source
             real_prices = df_preds[inference_dataset.output_cols].values.T[i]
@@ -358,7 +358,7 @@ def create_evaluation_graphs(train_session_dir):
             lc = LineCollection(segments, colors=colors, linewidths=1)
             ax.add_collection(lc)
 
-            plt.title(f'{output_cols[i]}')
+            plt.title(f'{inference_dataset.output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
@@ -402,9 +402,9 @@ def create_evaluation_graphs(train_session_dir):
             if e == len(inference_dataset) - 1:
                 autoregressive_tensor_with_zeros[interval+args.input_window:interval+args.input_window+args.output_window, inference_dataset.output_col_indices] = next_interval.detach().cpu().float().squeeze().T
 
-        for i in tqdm(range(len(output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
-            row_count = math.ceil(len(output_cols)**0.5)
-            plt.subplot(row_count, math.ceil(len(output_cols)/row_count), i + 1)
+        for i in tqdm(range(len(inference_dataset.output_cols)), desc=f'plotting autoregressive {dataset_portion} dataset predictions', leave=False):
+            row_count = math.ceil(len(inference_dataset.output_cols)**0.5)
+            plt.subplot(row_count, math.ceil(len(inference_dataset.output_cols)/row_count), i + 1)
             
             _, rescaled_target_series_to_plot = inference_dataset.rescale_to_real_price(torch.from_numpy(learned_dataframe_crop[inference_dataset.output_cols].values), initial_prices)
             ground_truth = rescaled_target_series_to_plot.T[i]
@@ -418,7 +418,7 @@ def create_evaluation_graphs(train_session_dir):
             rescaled_autoregressive_col_with_zeros = rescaled_autoregressive_zero_series_to_plot.T[i]
             plt.plot(rescaled_autoregressive_col_with_zeros, label="Autoregressive Predictions With Zeros", color="green", zorder=2)
 
-            plt.title(f'{output_cols[i]}')
+            plt.title(f'{inference_dataset.output_cols[i]}')
             plt.xlabel("Time")
             plt.ylabel("Value")
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
