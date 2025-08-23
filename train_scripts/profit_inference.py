@@ -1,0 +1,312 @@
+import warnings
+warnings.filterwarnings("ignore")
+
+import os
+import json
+import argparse
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from datetime import datetime
+import plotly.graph_objects as go
+
+import torch
+from torch.utils.data import DataLoader
+
+from import_model import import_model
+from import_dataset import import_dataset
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def profit_inference(train_session_dir, csv_to_infer):
+    # read the training session data and recreate the training environment for inference
+    json_to_inference = os.path.join(train_session_dir,"args.json")
+    with open(json_to_inference, 'r') as f:
+        data = json.load(f)
+
+    model_name = data["model_name"]
+
+    model_pt_name = [x for x in os.listdir(train_session_dir) if x.endswith(".pt") and "series" not in x][0]
+    model_pt_path = os.path.join(train_session_dir, model_pt_name)
+
+    args = argparse.Namespace(**data)
+
+    input_cols = [f'{c}_{f}' for c in args.input_coins for f in args.input_features]
+    output_cols = [f'{c}_{f}' for c in args.output_coins for f in args.output_features]
+    output_col_indices_in_input_cols = [input_cols.index(col) for col in output_cols]
+    target_coin_indices = [args.input_coins.index(c) for c in args.output_coins]
+
+    model_kwargs = {"input_features": len(args.input_coins)*len(args.input_features), "output_features": len(args.output_coins)*len(args.output_features),
+    "input_window": args.input_window, "output_window": args.output_window,
+    "dropout": args.dropout, "num_layers": args.num_layers, "hidden_dim": args.hidden_dim, "num_heads": args.num_heads,
+    "teacher_forcing_ratio": args.teacher_forcing_ratio, "input_cols":input_cols, "output_cols":output_cols,
+    "target_coin_indices": target_coin_indices, "output_col_indices_in_input_cols": output_col_indices_in_input_cols,
+    "device": device}
+
+    model = import_model(args.model_name, **model_kwargs)
+    model.load_state_dict(torch.load(model_pt_path, weights_only=True))
+    model = model.eval()
+    if hasattr(model, "set_teacher_forcing_ratio"):
+        model.set_teacher_forcing_ratio(0)
+
+    base_dataset_kwargs = {"input_coins": args.input_coins, "input_features": args.input_features, "output_coins": args.output_coins,
+    "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
+    "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
+    "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, 
+    "merge_count": args.merge_count, "train_session_dir": train_session_dir}
+
+    inference_dataset_kwargs = {**base_dataset_kwargs, "csv_path": csv_to_infer, "augmentation_p": 0, "training_dataset":0}
+    inference_dataset = import_dataset(args.dataset_name, **inference_dataset_kwargs)
+    inference_loader = DataLoader(inference_dataset, batch_size=args.batch_size, shuffle=False)
+
+    all_predictions = []
+
+    with torch.no_grad():
+        for x_batch, y_batch in tqdm(inference_loader, leave=False, desc=f'Doing predictions on the {csv_to_infer}'):
+            x_batch = x_batch.to(device)
+            y_batch = y_batch.to(device)
+
+            preds = model.call(x_batch, y_batch)
+            all_predictions.append(preds.cpu())
+
+    all_predictions = torch.cat(all_predictions, dim=0)  # [n, features, timeline]
+    torch.save(all_predictions, os.path.join(train_session_dir, f'{model_name}_inference_series.pt'))
+
+    # read the data, get the columns of the coin
+    df = pd.read_csv(csv_to_infer, index_col="open_time")
+    df = df[inference_dataset.output_cols]
+    df.columns = [col.split("_")[1] for col in df.columns]
+
+    # calculate where will the predictions start from
+    learned_dataframe_crop = inference_dataset.df.iloc[data["input_window"]:]
+    t1 = datetime.strptime(learned_dataframe_crop.index[0], "%Y-%m-%d %H:%M:%S")
+    t2 = datetime.strptime(learned_dataframe_crop.index[1], "%Y-%m-%d %H:%M:%S")
+    delta = t2 - t1
+    t0 = t1 - delta
+
+    # get that portion of the data
+    # df dataset will only be used to retrieve the real prices of the current interval
+    # and we will use the all_predictions tensor for the upcoming interval planning
+    df = df.loc[str(t0):]
+
+    # df[i] -> should give the real price of the interval i
+    # all_predictions[i] -> should give the upcoming args.output_window intervals' predictions after the interval i
+    # so if we are at the end of the day0, df[i] will give the data from day0, and all_predictions will give the data from day1-8
+    # we will use the df[i] as an initial price for teh all_predictions[i]
+
+    def get_orders(oclh, error_margin):
+        # calculate each (buy at low, sell at an upcoming high) profit
+        profits = []
+        for low_day in range(oclh.shape[1]):
+            for high_day in range(low_day + 1, oclh.shape[1]):
+                profit = oclh[3][high_day] - oclh[2][low_day]
+                if profit > 0:
+                    profits.append(((low_day, high_day), (oclh[2][low_day], oclh[3][high_day]), profit, (2, 3)))
+
+        # calculate sandwiches
+        sandwiches = []
+        while len(profits) > 0:
+            max_b_s_p_l_h = max(profits, key=lambda item: item[2])
+            if max_b_s_p_l_h[2] > 0:
+                sandwiches.append(max_b_s_p_l_h)
+                profits = [x for x in profits if x[0][1] < max_b_s_p_l_h[0][0] or x[0][0] > max_b_s_p_l_h[0][1]]
+
+        # collect remaining slices
+        slices = [x for x in range(oclh.shape[1]) if x not in sum(([list((range(x[0][0], x[0][1]+1))) for x in sandwiches]), [])]
+
+        orders = sandwiches
+
+        # create buy sell orders from slices and collect all orders in a list
+        for s in slices:
+            slice_ = oclh[:, s]
+            if slice_[3] - slice_[0] > 0 or slice_[1] - slice_[2] > 0:
+                # if high-open is bigger than close-low
+                if slice_[3] - slice_[0] > slice_[1] - slice_[2]:
+                    orders.append(((s, s), (slice_[0], slice_[3]), slice_[3]-slice_[0], (0, 3))) # buy at open, sell at high
+                else:
+                    orders.append(((s, s), (slice_[2], slice_[1]), slice_[1]-slice_[2], (2, 1))) # buy at low, sell at close
+
+        # sorted orders in the format of [(buy_day_index, sell_day_index), (buy_price, sell_price), profit]
+        orders = sorted(orders, key=lambda x:x[0][0])
+        orders = [{"buy_day":x[0][0], "sell_day":x[0][1], "buy_price":x[1][0], "sell_price":x[1][1], "profit":x[2], "buy_sell_features":x[3]} for x in orders if x[2] > 2*error_margin]
+
+        return orders
+
+    def toast_bread_agent(df, all_predictions, bank_start, error_margin=0):
+        """
+        Toast Bread strategy is a strategy that I came up with, which utilizes the limited future insight that keeps flowing when time progresses. It consists of 2 stages: stage A where the agent creates a plan and stage B/C where the agent acts upon the newly came future insight. Before explaining the underlying logic, first lets talk about a scenario where our trained models make predictions for the 8 upcoming time-series data with 6 hours intervals. It predicts 4 features for each interval: open, close, low and high. So our future-insight is in this format: [d1.0-6, d1.6-12, d1.12-18, d1.18-24, d2.0-6, d2.6-12, d2.12-18, d2.18-24] where di.s-e means ith day's [open, close, low, end] information for the interval between start hour s and end hour h.
+        And these are the terms for having common ground on the explanations.
+        'slice' is a 6 hour interval, it contains an open and a close price that is at the start and end of the 6 hour interval. And it contains low and high prices which are the lowest and highest prices the coin has achieved in this interval. We don't have any time information about these two. 'di.s-e' is a slice.
+        'sandwich' is consecutive slices back to back. A single slice is not a sandwich.
+
+        And we set all of our buy and sell orders with an error margin. Lets say the coin comes 100$ close to our prediction price, then we take the action, and if it doesn't we don't do anything. Below is how the strategy works step by step:
+        A. 1- find the best profiting sandwich, that has the profit margin of (highest-lowest), where 'lowest' is the low price of the slice that is at the beginning of the sandwich; and 'highest' is the high price of the slice that is at the end of the sandwich.
+        A. 2- create a buy-sell order to buy the coin at sandwich's lowest and sell at sandwich's highest
+        A. 3- remove this sandwich from the data
+        A. 4- continue doing A.1-2-3 steps at remaining data (but we approach them as seperate time-series data since removed sandwich split them into two unrelated parts) till there is no profitable sandwich left.
+        A. 5- for all remaining slices in our data, do one of these:
+        A. 5.1- create a buy order at open price if we can sell at close price or high price with profit
+        A. 5.2- create a buy order at low price if we can sell at close price with profit
+
+        And now we have a plan with a list of set buy-sell orders for the sandwichs (also could be empty), and also buy-sell orders for the slices (also could be empty). If we have some orders for the current interval that we are in right now, we do them. Now we go to next time interval. Since we enter the new interval, we now got next predictions from the models. It covers again upcoming 8 intervals so there is a 7 interval overlap but we select to trust newly came predictions rather than old ones. After entering the next interval, now we can be in two stages, first easier stage B:
+        B. 1- we dont have any ongoing plan (meaning we are not inbetween some buy-sell order of a sandwich from stage A. We either did a slice buy-sell order, or didn't take any actions at all)
+        B. 2- if so, then we go back to stage A where we had no plan, and do A.1-2-3-4-5 buy-sell order setting steps again with the newly came predictions.
+
+        or harder stage C:
+        C. 1- we have some ongoing plan (meaning we had a set buy-sell order which we completed the buy part and now waiting for the sell part)
+        C. 2- we trust the newly came slices more than our past data so we discard all plans other than the ongoing one because.
+        C. 3- and we check the state of our ongoing plan, which can be updated in three different way as below:
+        C. 4.1- if we have a better selling point at a newly predicted slice's high price on the timeline, we change our current ongoing plan's selling point to that point, and discard any prediction that comes before that. do the steps A-1-2-3-4-5 for the remaining data
+        C. 4.2- if we don't have a better selling point at a newly came slice further on the timeline and our previous selling slice's high price is still valid, continue with our plan and do the A-1-2-3-4-5 with remaining data
+        C. 4.3, if we don't have a better selling point at further on the timeline and our previous selling slice's high price is now invalid (which means that the newly came predictions contradict with the past ones), find the highest selling point that we can find, set our ongoing plan's selling point to that slice's high price to get away with lowest money loss. and do the A-1-2-3-4-5 with remaining ones
+
+        This method is named after a toast bread since it's easier to visualize this 6 hour intervals with an image that has a width rather than a timeline of the data (it's confusing to think about our open, close, low, high features when first 2 has a timestamp and second two's occurance time is not knoww which means we can't set a buy-sell order like buying at di.12-18.low and selling at di.12-18.high since high might have occured before the low). Also it helps with the easy-to-remember non-terminologic words by naming the intervals as slices and back to back intervals as sandwiches.
+        This way we can show the effects of 'knowing predicted future' on the agent profits compared to 'unknown future' and also 'ground-truth future'.
+        """
+        bank = bank_start
+        wallet = 0
+        ongoing_order = None
+        sold_at_first_order_open_to_buy_later_for_first_order = False
+        buys, sells = [], []
+
+        cols_and_indices = {col:e for e,col in enumerate(df.columns)}
+        permute_order = [cols_and_indices[col] for col in ["open", "close", "low", "high"]]
+
+        values = []
+        all_predictions = all_predictions.numpy()
+        for i in tqdm(range(len(all_predictions)), "applying toast bread"):
+            oclh_initial = df.iloc[i].values
+
+            oclh_predictions = all_predictions[i]
+            oclh_predictions, _ = inference_dataset.rescale_to_real_price(torch.from_numpy(oclh_predictions.T), torch.from_numpy(oclh_initial.T))
+            
+            oclh_to_buy_sell_from = df.iloc[i+1].values
+            price_to_buy_or_sell = np.mean(oclh_to_buy_sell_from)
+
+            # now transform the oclh and pclh_predictions back into the open,close,low,high ordered columns
+            oclh_to_buy_sell_from = oclh_to_buy_sell_from[permute_order]
+            oclh_predictions = oclh_predictions[:, permute_order].numpy()
+
+            if ongoing_order is None:
+                orders = get_orders(oclh_predictions, error_margin)
+
+                if len(orders) > 0 and orders[0]["buy_day"] == 0:
+                    ongoing_order = orders[0]
+                    if bank > 0:
+                        price_to_buy_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
+                        
+                        if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
+                            ongoing_order["buy_price"] = price_to_buy_from
+                            wallet += bank / ongoing_order["buy_price"]
+                            bank = 0
+                            buys.append((i+1, ongoing_order["buy_price"]))
+                            # print("buying at", i, "to open the ongoing order", ongoing_order)
+                        else:
+                            values.append(bank + wallet * price_to_buy_or_sell)
+                            continue                        
+                else:
+                    values.append(bank + wallet * price_to_buy_or_sell)
+                    continue
+                
+                if ongoing_order["sell_day"] == 0:
+                    if wallet > 0:
+                        price_to_sell_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
+                        
+                        ongoing_order["sell_price"] = price_to_sell_from
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+                        # print("selling at", i, "to open the ongoing order", ongoing_order)
+                    ongoing_order = None
+                
+                if ongoing_order:
+                    ongoing_order["buy_day"] -= 1
+                    ongoing_order["sell_day"] -= 1
+
+            else:
+                first_order = get_orders(oclh_predictions, error_margin)[0]
+
+                if first_order is not None:
+                    # ongoing order eats the first order if it's profit will get bigger
+                    if first_order["buy_price"] > ongoing_order["sell_price"]:
+                        ongoing_order = {"buy_day": ongoing_order["buy_day"], "sell_day": first_order["sell_day"],
+                                        "buy_price": ongoing_order["buy_price"],"sell_price": first_order["sell_price"],
+                                        "profit": first_order["sell_price"] - ongoing_order["buy_price"],
+                                        "buy_sell_features": (ongoing_order["buy_sell_features"][0], first_order["buy_sell_features"][1])}
+                    else: # there is more profit chance at selling ongoing and then doing the first order do that
+                        if first_order["buy_day"] == 0 and ongoing_order["sell_day"] != 0:
+                            # set the ongoing_order sell date as the open price of the first_order's buy day
+                            ongoing_order = {"buy_day": ongoing_order["buy_day"], "sell_day": 0,
+                                        "buy_price": ongoing_order["buy_price"],"sell_price": oclh_predictions[0, 0],
+                                        "profit": oclh_predictions[0, 0] - ongoing_order["buy_price"],
+                                        "buy_sell_features": (ongoing_order["buy_sell_features"][0], 0)}
+                            
+                            sold_at_first_order_open_to_buy_later_for_first_order = True
+                        elif first_order["buy_day"] > 0:
+                            # set the ongoing_order sell date as the highest that comes before first order
+                            highest_day_before_first_order, highest_price_before_first_order = np.argmax(oclh_predictions[3, :first_order["buy_day"]]), max(oclh_predictions[3, :first_order["buy_day"]])
+                            ongoing_order = {"buy_day": ongoing_order["buy_day"], "sell_day": highest_day_before_first_order,
+                                        "buy_price": ongoing_order["buy_price"],"sell_price": highest_price_before_first_order,
+                                        "profit": highest_price_before_first_order - ongoing_order["buy_price"],
+                                        "buy_sell_features": (ongoing_order["buy_sell_features"][0], 3)}
+
+                # if we set the ongoing_order sell date as today, sell it
+                if ongoing_order["sell_day"] == 0:
+                    if wallet > 0:
+                        price_to_sell_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
+                        ongoing_order["sell_price"] = price_to_sell_from
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+                        # print("selling at", i, "to open the ongoing order", ongoing_order)
+                    ongoing_order = None
+
+                if sold_at_first_order_open_to_buy_later_for_first_order:
+                    sold_at_first_order_open_to_buy_later_for_first_order = False
+                    ongoing_order = first_order
+                    if bank > 0:
+                        price_to_buy_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
+                        
+                        if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
+                            ongoing_order["buy_price"] = price_to_buy_from
+                            wallet += bank / ongoing_order["buy_price"]
+                            bank = 0
+                            buys.append((i+1, ongoing_order["buy_price"]))
+                            # print("buying at", i, "sold_at_first_order_open_to_buy_later_for_first_order", ongoing_order)
+                        else:
+                            values.append(bank + wallet * price_to_buy_or_sell)
+                            continue
+                    ongoing_order["buy_day"] -= 1
+                    ongoing_order["sell_day"] -= 1
+
+            values.append(bank + wallet * price_to_buy_or_sell)
+
+        return values, buys, sells
+
+    values, buys, sells = toast_bread_agent(df, all_predictions, bank_start=1000, error_margin=10)
+    time = df.reset_index()['open_time']
+
+    # Create the figure
+    fig = go.Figure()
+
+    # Add price lines
+    fig.add_trace(go.Scatter(x=time, y=df['open'], mode='lines', name='Open', line=dict(color='purple')))
+    fig.add_trace(go.Scatter(x=time, y=df['close'], mode='lines', name='Close', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=time, y=df['low'], mode='lines', name='Low', line=dict(color='red')))
+    fig.add_trace(go.Scatter(x=time, y=df['high'], mode='lines', name='High', line=dict(color='green')))
+
+    # Add buy-sell arrows/lines
+    for (buy_idx, buy_price), (sell_idx, sell_price) in zip(buys, sells):
+        fig.add_trace(go.Scatter(
+            x=[time.iloc[buy_idx], time.iloc[sell_idx]],
+            y=[buy_price, sell_price],
+            mode='lines+markers',
+            line=dict(color='black' if sell_price > buy_price else 'brown', width=3),
+            marker=dict(size=6),
+        ))
+
+    # Update layout for interactivity
+    fig.update_layout(height=600)
+    print(f'A total of ${values[-1]} from the start ${values[0]}')
+    # Show plot
+    fig.show()
