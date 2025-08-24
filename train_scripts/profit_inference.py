@@ -96,6 +96,7 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
     cols_and_indices = {col:e for e,col in enumerate(df.columns)}
     permute_order = [cols_and_indices[col] for col in ["open", "close", "low", "high"]]
 
+    intended_orders = []
     values = []
     all_predictions = all_predictions.numpy()
     for i in tqdm(range(len(df))):
@@ -113,7 +114,7 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
         if i == len(df)-1:
             # return oclh_predictions
             upcoming_orders = get_orders(oclh_predictions.T, error_margin)
-            return values, buys, sells, oclh_predictions, upcoming_orders
+            return values, buys, sells, intended_orders, oclh_predictions, upcoming_orders
 
         oclh_to_buy_sell_from = df.iloc[i+1].values
         # now transform the oclh back into the open,close,low,high ordered columns
@@ -130,6 +131,10 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                     
                     if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
                         ongoing_order["buy_price"] = price_to_buy_from
+                        intended_order = ongoing_order.copy()
+                        intended_order["buy_interval"] = intended_order["buy_interval"] + i + 1
+                        intended_order["sell_interval"] = intended_order["sell_interval"] + i + 1
+                        intended_orders.append(intended_order)
                         wallet += bank / ongoing_order["buy_price"]
                         bank = 0
                         buys.append((i+1, ongoing_order["buy_price"]))
@@ -205,6 +210,10 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                     
                     if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
                         ongoing_order["buy_price"] = price_to_buy_from
+                        intended_order = ongoing_order.copy()
+                        intended_order["buy_interval"] = intended_order["buy_interval"] + i + 1
+                        intended_order["sell_interval"] = intended_order["sell_interval"] + i + 1
+                        intended_orders.append(intended_order)
                         wallet += bank / ongoing_order["buy_price"]
                         bank = 0
                         buys.append((i+1, ongoing_order["buy_price"]))
@@ -217,7 +226,7 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
 
         values.append(bank + wallet * price_to_buy_or_sell)
 
-def plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_orders, delta):
+def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta):
     df = df.reset_index()
 
     # Compute interval end as next row's open_time
@@ -261,11 +270,11 @@ def plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_o
             return open_t
 
     # Draw trades
-    for (buy_idx, buy_price), (sell_idx, sell_price) in zip(buys, sells):
+    for i, ((buy_idx, buy_price), (sell_idx, sell_price)) in enumerate(zip(buys, sells)):
         buy_t = get_trade_time(df.iloc[buy_idx], buy_price)
         sell_t = get_trade_time(df.iloc[sell_idx], sell_price)
 
-        fig.add_trace(go.Scatter(x=[buy_t, sell_t],y=[buy_price, sell_price],mode="lines+markers", line=dict(color="black" if sell_price > buy_price else "brown",width=3),marker=dict(size=6), name="Trade"))
+        fig.add_trace(go.Scatter(x=[buy_t, sell_t],y=[buy_price, sell_price],mode="lines+markers", line=dict(color="black" if sell_price > buy_price else "brown",width=3),showlegend=(i == 0),marker=dict(size=6), name="Trade"))
 
     # puts a red shade on the predictions lines
     cutoff_time = df["close_time"].iloc[-1]
@@ -302,12 +311,11 @@ def plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_o
         fig.add_trace(go.Scatter(x=[start_t, start_t],y=[low_val, high_val],mode="lines",line=dict(color="gray", width=1, dash="dot"),showlegend=(i == 0),name="Pred Low-High"))
 
     # calculates the buy sell time for the planned orders
-    def get_predicted_trade_time(interval_idx, feature_idx, predicted_time):
-        """
-        interval_idx: index in predicted_time
-        feature_idx: 0=open, 1=close, 2=low, 3=high
-        """
-        start = predicted_time[interval_idx]
+    def get_predicted_trade_time(interval_idx, feature_idx, time_slots):
+        try:
+            start = time_slots[interval_idx]
+        except KeyError: # in case our sell date was out of the df timeline at the last intended order
+            start = time_slots[len(time_slots)-1] + delta * (interval_idx - (len(time_slots) - 1))
         end = start + delta
 
         # Position according to feature
@@ -320,7 +328,18 @@ def plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_o
             return start + delta / 2
 
     # Plot predicted upcoming_orders
-    for order in upcoming_orders:
+    for i, order in enumerate(intended_orders):
+        buy_time = get_predicted_trade_time(order['buy_interval'], order['buy_sell_features'][0], df["open_time"])
+        sell_time = get_predicted_trade_time(order['sell_interval'], order['buy_sell_features'][1], df["open_time"])
+        buy_price = order['buy_price']
+        sell_price = order['sell_price']
+        profit_ratio = sell_price / buy_price
+
+        # Draw future planned orders
+        fig.add_trace(go.Scatter(x=[buy_time, sell_time],y=[buy_price, sell_price],mode='lines+markers+text',line=dict(color='gray', width=1, dash="dash"),showlegend=(i == 0),marker=dict(size=4),textposition="top center",name="Intended Trade"))
+
+    # Plot predicted upcoming_orders
+    for i, order in enumerate(upcoming_orders):
         buy_time = get_predicted_trade_time(order['buy_interval'], order['buy_sell_features'][0], predicted_time)
         sell_time = get_predicted_trade_time(order['sell_interval'], order['buy_sell_features'][1], predicted_time)
         buy_price = order['buy_price']
@@ -328,7 +347,7 @@ def plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_o
         profit_ratio = sell_price / buy_price
 
         # Draw future planned orders
-        fig.add_trace(go.Scatter(x=[buy_time, sell_time],y=[buy_price, sell_price],mode='lines+markers+text',line=dict(color='black', width=2, dash="dot"),marker=dict(size=6),text=[None, f"{profit_ratio:.4f}x"],textposition="top center",name="Predicted Order"))
+        fig.add_trace(go.Scatter(x=[buy_time, sell_time],y=[buy_price, sell_price],mode='lines+markers+text',line=dict(color='black', width=2, dash="dot"),marker=dict(size=6),showlegend=(i == 0),text=[None, f"{profit_ratio:.4f}x"],textposition="top center",name="Intended Future Trade"))
 
     fig.update_layout(height=600)
     fig.show()
@@ -411,8 +430,8 @@ def profit_inference(train_session_dir, csv_to_infer):
     # so if we are at the end of the interval0, df[i] will give the data from interval0, and all_predictions will give the data from interval1-8
     # we will use the df[i] as an initial price for teh all_predictions[i]
 
-    values, buys, sells, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=1000, error_margin=10)
-    plot_profit_inference(df, buys, sells, upcoming_oclh_predictions, upcoming_orders, delta)
+    values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=1000, error_margin=10)
+    plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
     
     return values
 

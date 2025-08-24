@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from itertools import product
 
 def random_all_in_agent(df, bank_start, buy_probability=0.8):
@@ -11,7 +10,7 @@ def random_all_in_agent(df, bank_start, buy_probability=0.8):
     action = "buy"
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -36,7 +35,7 @@ def random_portional_agent(df, bank_start, buy_probability=0.8):
     action = "buy"
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -64,7 +63,7 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
     action = "buy"
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -104,7 +103,7 @@ def martingale_agent(df, bank_start, base_bet=1, set_holding_period=2):
     action = "buy"
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -152,7 +151,7 @@ def dollar_cost_averaging_agent(df, bank_start, period=32):
     periodic_investment_budget = bank_start / (len(df) / period)
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -176,7 +175,7 @@ def sma_crossover_agent(df, bank_start, short_window=1, long_window=8):
     df['SMA_long'] = ((df["open"] + df["close"] + df["low"] + df["high"]) / 4).rolling(window=long_window, min_periods=1).mean()
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
 
@@ -215,7 +214,7 @@ def volatility_agent(df, bank_start, low_volatility_threshold_coeff=2, high_vola
     df['ATR'] = tr.rolling(window=16, min_periods=1).mean()
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         row_data = df.iloc[i]
         price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
         atr = row_data["ATR"]
@@ -254,7 +253,7 @@ def trend_following_agent(df, bank_start, buying_start=8, selling_start=16):
     action = "buy"  # Initial action
 
     values = []
-    for i in tqdm(range(len(df))):
+    for i in range(len(df)):
         price_to_buy_or_sell = df['close'].iloc[i]
 
         # Check for buy signal
@@ -336,7 +335,7 @@ def grid_search_strategies(csv_path, coin_name, bank_start):
     for name, result in best_results.items():
         print(f"Strategy: {name:<30} | Best Parameters: {str(result['params']):<60} | Best Final Value: {result['last_value']:.2f}")
 
-def get_trading_agent_values(csv_to_infer, coin_to_infer, bank_start=1000):
+def get_trading_agent_values(csv_to_infer, coin_to_infer, toast_bread_wait, bank_start=1000):
     df = pd.read_csv(csv_to_infer, index_col="open_time")
     df = df[[col for col in df.columns if coin_to_infer in col]]
     df.columns = [col.split("_")[1] for col in df.columns]
@@ -352,6 +351,24 @@ def get_trading_agent_values(csv_to_infer, coin_to_infer, bank_start=1000):
 
     agents = ["random_all_in_values", "random_portional_values", "holder_buyer_seller_values", "martingale_values", "dollar_cost_averaging_values", "sma_crossover_values", "volatility_values", "trend_following_values"]
     values = [random_all_in_values, random_portional_values, holder_buyer_seller_values, martingale_values, dollar_cost_averaging_values, sma_crossover_values, volatility_values, trend_following_values]
+    regular_agent_values = {agent:value for (agent,value) in zip(agents, values)}
 
-    return {agent:value for (agent,value) in zip(agents, values)}
+    df_late_start = pd.read_csv(csv_to_infer, index_col="open_time")
+    df_late_start = df_late_start[[col for col in df_late_start.columns if coin_to_infer in col]]
+    df_late_start.columns = [col.split("_")[1] for col in df_late_start.columns]
+    df_late_start = df_late_start.iloc[toast_bread_wait:]
 
+    random_all_in_values = random_all_in_agent(df_late_start.copy(), bank_start)
+    random_portional_values = random_portional_agent(df_late_start.copy(), bank_start)
+    holder_buyer_seller_values = holder_buyer_seller_agent(df_late_start.copy(), bank_start)
+    martingale_values = martingale_agent(df_late_start.copy(), bank_start)
+    dollar_cost_averaging_values = dollar_cost_averaging_agent(df_late_start.copy(), bank_start)
+    sma_crossover_values = sma_crossover_agent(df_late_start.copy(), bank_start)
+    volatility_values = volatility_agent(df_late_start.copy(), bank_start)
+    trend_following_values = trend_following_agent(df_late_start.copy(), bank_start)
+
+    agents = ["random_all_in_values", "random_portional_values", "holder_buyer_seller_values", "martingale_values", "dollar_cost_averaging_values", "sma_crossover_values", "volatility_values", "trend_following_values"]
+    values = [random_all_in_values, random_portional_values, holder_buyer_seller_values, martingale_values, dollar_cost_averaging_values, sma_crossover_values, volatility_values, trend_following_values]
+    late_start_agent_values = {agent:value for (agent,value) in zip(agents, values)}
+
+    return regular_agent_values, late_start_agent_values
