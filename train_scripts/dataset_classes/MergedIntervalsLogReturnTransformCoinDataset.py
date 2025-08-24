@@ -32,19 +32,13 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
         for i in range(1, merge_count):
             for c in list(set(input_coins + output_coins)):
                 self.df[f"{c}_open_{i}"] = (self.df[f"{c}_close_{i-1}"] + self.df[f"{c}_open_{i}"]) / 2
-                self.df = self.df.drop(columns=[f"{c}_close_{i-1}"])
-
-        new_order = sorted(self.df.columns, key= lambda x: x.split("_")[0])
-        self.df = self.df[new_order]
         
         self.df = np.log(self.df / self.df.shift(1))
         self.df.dropna(inplace=True)
 
         # input_features =[f for f in input_features for i in range(merge_count)]
         self.input_cols = [f'{c}_{f}' for c in input_coins for f in input_features]
-        self.input_cols = [col for col in self.df.columns for input_col in self.input_cols if input_col in col]
         self.output_cols = [f'{c}_{f}' for c in output_coins for f in output_features]
-        self.output_cols = [col for col in self.df.columns for output_col in self.output_cols if output_col in col]
         self.input_col_indices = [list(self.df.columns).index(col) for col in self.input_cols]
         self.output_col_indices = [list(self.df.columns).index(col) for col in self.output_cols]
 
