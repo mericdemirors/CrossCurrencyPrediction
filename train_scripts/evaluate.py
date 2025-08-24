@@ -84,7 +84,7 @@ def create_evaluation_graphs(train_session_dir):
         train_df = train_inference_dataset.set_raw_dataset_for_evaluation(train_df)
     train_df_preds = train_df.loc[train_learned_dataframe_crop.index]
     # we take the data["input_window"]th data as the initial price instead of data["input_window"]-1
-    # it's because we are shifting the dates 1 interval back during the preprocessing, so the first day is kinda wasted for the lof return computations
+    # it's because we are shifting the dates 1 interval back during the preprocessing, so the first interval is kinda wasted for the lof return computations
     # and so the initial price is also shifted one interval further than it would be at an unshifted dataset
     t1 = datetime.strptime(train_learned_dataframe_crop.index[0], "%Y-%m-%d %H:%M:%S")
     t2 = datetime.strptime(train_learned_dataframe_crop.index[1], "%Y-%m-%d %H:%M:%S")
@@ -137,6 +137,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())    
 
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/distributions_on_the_dataset_{dataset_portion}.png'))
+        plt.close()
     
     def plot_the_future_dataset_predictions(pred_series, learned_dataframe_crop, inference_dataset, dataset_portion):
         plt.figure(figsize=(30, 15))
@@ -198,6 +199,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())
             
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_dataset_{dataset_portion}.png'))
+        plt.close()
 
     def plot_the_autoregressive_dataset_predictions(learned_dataframe_crop, inference_dataset, dataset_portion):
         plt.figure(figsize=(30, 15))
@@ -247,7 +249,8 @@ def create_evaluation_graphs(train_session_dir):
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
-            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_dataset_{dataset_portion}.png'))
+        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_dataset_{dataset_portion}.png'))
+        plt.close()
 
     def plot_the_future_price_predictions(inference_dataset, learned_dataframe_crop, initial_prices, pred_series, df_preds, dataset_portion):
         # rescale the dataset values into real prices
@@ -281,7 +284,7 @@ def create_evaluation_graphs(train_session_dir):
             # this is the predictions of the model
             
             for trust, pred_series_to_plot in reversed(list(enumerate(pred_series_with_different_trusts))):
-                # first one's predictions are based on the real data, second one's predictions are based on the previous day's predictions
+                # first one's predictions are based on the real data, second one's predictions are based on the previous interval's predictions
                 rescaled_pred_series_to_plot_based_on_real_data, rescaled_pred_series_to_plot_based_on_predictions = inference_dataset.rescale_to_real_price(pred_series_to_plot.T, initial_prices)
                 rescaled_pred_series_on_real_data.append(rescaled_pred_series_to_plot_based_on_real_data)
                 rescaled_pred_series_on_predictions.append(rescaled_pred_series_to_plot_based_on_predictions)
@@ -373,6 +376,7 @@ def create_evaluation_graphs(train_session_dir):
             plt.legend(by_label.values(), by_label.keys())
 
         plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/future_predictions_on_the_prices_{dataset_portion}.png'))
+        plt.close()
 
     def plot_the_autoregressive_price_predictions(learned_dataframe_crop, inference_dataset, initial_prices, dataset_portion):
         plt.figure(figsize=(30, 15))
@@ -424,7 +428,8 @@ def create_evaluation_graphs(train_session_dir):
             plt.ylim(ground_truth.min()*0.9, ground_truth.max()*1.1)
             plt.legend()
 
-            plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_prices_{dataset_portion}.png'))
+        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/autoregressive_predictions_on_the_prices_{dataset_portion}.png'))
+        plt.close()
 
     os.makedirs(os.path.join(train_session_dir, "evaluation_graphs"), exist_ok=True)
     plot_the_dataset_distributoins(train_pred_series, train_learned_dataframe_crop, train_inference_dataset, "train")
