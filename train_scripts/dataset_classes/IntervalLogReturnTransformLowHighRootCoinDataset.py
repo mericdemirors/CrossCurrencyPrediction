@@ -87,7 +87,7 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
 
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-    def rescale_to_real_price(self, price, initial_prices):
+    def rescale_to_real_price(self, price, initial_prices, profit_inference=False):
         # reverse the low high square rooting
         low_high_prices = price[:, self.low_high_col_indices_in_output]
         low_high_prices = torch.square(low_high_prices) * torch.sign(low_high_prices)
@@ -139,6 +139,12 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
                     opens_to_relate_i = opens_to_relate.item() if opens_to_relate.dim() == 0 else opens_to_relate[i]
                     real_price_based_on_only_predictions[t + 1, nonopen_column_indices_in_output_columns[i*(len(self.output_features)):(i+1)*(len(self.output_features))]] = opens_to_relate_i * torch.exp(price_with_zero_cols_inverted_only_coin[t, nonopen_column_indices_in_output_columns[i*(len(self.output_features)):(i+1)*(len(self.output_features))]]).float()
 
+        # if we are doing profit inference we need some predictions in the future that's data not in the df
+        # so we can't relate them to the real data we can only base them on the predictions
+        if profit_inference:
+            real_price_based_on_only_predictions = real_price_based_on_only_predictions[1:]
+            return real_price_based_on_only_predictions
+
         for t in range(price_with_zero_cols_inverted_only_coin.shape[0]):
             if "open" in self.output_features: # if we have some open features in the output, we will relate the other features to them
                 # get the output columns' indices with open feature
@@ -151,8 +157,8 @@ class IntervalLogReturnTransformLowHighRootCoinDataset(Dataset):
 
             # now to compute the features with the open features have
             if "open" in self.output_features:
-                # even if we have the open columns in our output features, we will still relate them to the real open price of the previous day
-                # we will not relate them to the open price that is calculated over the predictions, so take the open of the previous day
+                # even if we have the open columns in our output features, we will still relate them to the real open price of the previous interval
+                # we will not relate them to the open price that is calculated over the predictions, so take the open of the previous interval
                 opens_row_index_previous_interval = matching_row_index + t
                 
                 opens_row_index_previous_interval = torch.tensor(df[[f'{c}_open' for c in self.output_coins]].iloc[opens_row_index_previous_interval].values).squeeze()

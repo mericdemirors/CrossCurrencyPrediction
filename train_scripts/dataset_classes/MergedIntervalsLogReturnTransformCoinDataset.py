@@ -86,7 +86,7 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
 
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-    def rescale_to_real_price(self, price, initial_prices):
+    def rescale_to_real_price(self, price, initial_prices, profit_inference=False):
         price_with_zero_cols = np.zeros((price.shape[0], len(self.df.columns)))
         price_with_zero_cols[:, self.output_col_indices] = price
         price_with_zero_cols_inverted = self.transform.inverse_transform(price_with_zero_cols)
@@ -101,6 +101,13 @@ class MergedIntervalsLogReturnTransformCoinDataset(Dataset):
         df = self.set_raw_dataset_for_evaluation(df)
         matches = np.all(np.isclose(df[self.output_cols].values, initial_prices.numpy(), atol=1e-4), axis=1)
         initial_prices_index = np.where(matches)[0]
+
+        # if we are doing profit inference we need some predictions in the future that's data not in the df
+        # so we can't relate them to the real data we can only base them on the predictions
+        if profit_inference:
+            real_price_based_on_only_predictions = initial_prices * np.exp(np.cumsum(price_with_zero_cols_inverted_only_coin, axis=0))
+            return real_price_based_on_only_predictions
+
 
         real_data_to_relate = torch.tensor(df[self.output_cols].iloc[initial_prices_index.item(): (initial_prices_index+price_with_zero_cols_inverted_only_coin.shape[0]).item()].values).squeeze().float()
         real_price_based_on_real_data = real_data_to_relate * torch.exp(price_with_zero_cols_inverted_only_coin)
