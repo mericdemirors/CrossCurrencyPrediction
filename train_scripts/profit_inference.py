@@ -435,16 +435,16 @@ def profit_inference(train_session_dir, csv_to_infer):
     
     return values
 
-def compare_profits(trading_agents_and_values, toast_bread_values, toast_bread_wait, bank_start):
+def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_values, toast_bread_wait, bank_start):
     start_filled_toast_bread = [bank_start for _ in range(toast_bread_wait + 1)] + toast_bread_values
 
-    plt.figure(figsize=(15,10))
+    plt.figure(figsize=(30, 15))
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(trading_agents_and_values)))
 
     for (k, v), c in zip(trading_agents_and_values.items(), colors):
         plt.plot(v, color=c, label=k)
-        plt.text(len(v) - 1, v[-1], f" {k}", color=c, va="center", fontsize=10)
+        plt.text(len(v) - 1, v[-1], f" {k}", color=c, va="center", fontsize=15)
         
     min_100 = int(min([min(vs) for vs in trading_agents_and_values.values()]))
     max_100 = int(max([max(vs) for vs in trading_agents_and_values.values()]))
@@ -452,5 +452,14 @@ def compare_profits(trading_agents_and_values, toast_bread_values, toast_bread_w
         plt.axhline(y=y, color="gray", linestyle=":", linewidth=0.8)
 
     plt.plot(start_filled_toast_bread, color="black", linestyle="--", linewidth=2, label="toast_bread")
-    plt.text(len(start_filled_toast_bread) - 1, start_filled_toast_bread[-1], " toast_bread", color="black", va="center", fontsize=10, fontweight="bold")
+    plt.text(len(start_filled_toast_bread) - 1, start_filled_toast_bread[-1], " toast_bread", color="black", va="center", fontsize=15, fontweight="bold")
     plt.legend()
+
+    plt.title(f'Trading Strategies Profit Comparison')
+    plt.xlabel("Time")
+    plt.ylabel("$ Value")
+    if toast_bread_wait == 1:
+        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with_equal_start.png'))
+    else:
+        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with late_start.png'))
+    plt.close()
