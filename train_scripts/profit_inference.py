@@ -387,8 +387,9 @@ def profit_inference(train_session_dir, csv_to_infer):
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
     "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles, 
-    "merge_count": args.merge_count, "train_session_dir": train_session_dir}
-
+    "merge_count": args.merge_count, "price_loss_with_real": args.price_loss_with_real, "price_loss_weight": args.price_loss_weight,
+    "train_session_dir": train_session_dir}
+    
     inference_dataset_kwargs = {**base_dataset_kwargs, "csv_path": csv_to_infer, "augmentation_p": 0, "training_dataset":0}
     inference_dataset = import_dataset(args.dataset_name, **inference_dataset_kwargs)
 

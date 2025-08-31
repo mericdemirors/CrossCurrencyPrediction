@@ -1,5 +1,5 @@
 import torch
-def low_high_loss(prediction, target):
+def low_high_loss(prediction, target, base_loss_fn):
     # --- low high constraints ---
     low = prediction[:, 2, :]
     high = prediction[:, 3, :]

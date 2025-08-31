@@ -47,7 +47,7 @@ def loss(model, prediction, target, loss_name, l1_loss_weight, l2_loss_weight, a
     # additional losses
     additional_losses = []
     for loss_fn, loss_weight in zip(additional_loss_fns, additional_loss_weights):
-        additional_losses.append((loss_fn(prediction, target) * loss_weight).item())
+        additional_losses.append((loss_fn(prediction, target, base_loss_fn) * loss_weight).item())
 
     total_loss = base_loss + l1_reg + l2_reg + sum(additional_losses)
 
@@ -198,7 +198,8 @@ def train_with_args(args):
     "output_features": args.output_features, "input_window": args.input_window, "output_window": args.output_window,
     "augmentation_noise_std": args.augmentation_noise_std, "augmentation_constant_c": args.augmentation_constant_c, "augmentation_scale_s": args.augmentation_scale_s,
     "transform_name":args.transform_name, "output_distribution": args.output_distribution, "n_quantiles": args.n_quantiles,
-    "merge_count": args.merge_count, "train_session_dir": train_session_dir}
+    "merge_count": args.merge_count, "price_loss_with_real": args.price_loss_with_real, "price_loss_weight": args.price_loss_weight,
+    "train_session_dir": train_session_dir}
     
     train_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.train_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":1}
     val_dataset_kwargs = {**base_dataset_kwargs, "csv_path": args.val_csv_path, "augmentation_p": args.augmentation_p, "training_dataset":0}
@@ -219,6 +220,10 @@ def train_with_args(args):
     val_inference_loader = DataLoader(val_inference_dataset, batch_size=args.batch_size, shuffle=False)
 
     additional_loss_fns = import_loss(args.additional_loss_fn_names)
+
+    if hasattr(train_dataset, "price_loss"):
+        additional_loss_fns.append(train_dataset.price_loss)
+        args.additional_loss_weights.append(train_dataset.price_loss_weight)
 
     train_session_dir = train_model(model=model, model_name=args.model_name, output_coins=args.output_coins, output_features=args.output_features,
                 train_loader=train_loader, val_loader=val_loader, epochs=args.epochs, epoch_plot_step=args.epoch_plot_step,
@@ -374,6 +379,9 @@ def main():
     parser.add_argument("--output_distribution", type=str, default="normal") # sklearn.preprocessing QuantileTransformer distribution type
     parser.add_argument("--n_quantiles", type=int, default=1000) # sklearn.preprocessing QuantileTransformer number of quantiles
     parser.add_argument("--merge_count", type=int, default=2) # how many intervals to merge for the MergedIntervalsLogReturnTransformCoinDataset dataset
+    parser.add_argument("--merge_count", type=int, default=2) # how many intervals to merge for the MergedIntervalsLogReturnTransformCoinDataset dataset
+    parser.add_argument("--price_loss_with_real", type=bool, default=True) # what to base the predictions for the price_loss calculation at the LogReturnTransformPriceLossCoinDataset dataset
+    parser.add_argument("--price_loss_weight", type=float, default=0.01) # how to weight the price_loss calculation at the LogReturnTransformPriceLossCoinDataset dataset
     parser.add_argument("--plot_weight_grad", type=int, default=0) # whether to plot weight and gradient plots at each epoch
     parser.add_argument("--loss_name", type=str, default="") # name of the loss to use
     parser.add_argument("--additional_loss_fn_names", type=str, nargs='+', default=[]) # names of additional losses to apply
