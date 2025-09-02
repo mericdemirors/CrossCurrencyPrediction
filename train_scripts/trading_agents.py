@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from itertools import product
 
-def random_all_in_agent(df, bank_start, buy_probability=0.8):
+def random_all_in_agent(df, bank_start, buy_probability=0.75):
     bank = bank_start
     wallet = 0
 
@@ -93,7 +93,7 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
 
     return values
 
-def martingale_agent(df, bank_start, base_bet=1, set_holding_period=2):
+def martingale_agent(df, bank_start, base_bet=1, set_holding_period=1):
     bank = bank_start
     wallet = 0   # Amount of coin
     current_bet = base_bet
@@ -165,7 +165,7 @@ def dollar_cost_averaging_agent(df, bank_start, period=32):
 
     return values
 
-def sma_crossover_agent(df, bank_start, short_window=1, long_window=8):
+def sma_crossover_agent(df, bank_start, short_window=1, long_window=2):
     bank = bank_start
     wallet = 0
     action = "buy"  # Initial action can be to buy if there's bank
@@ -201,7 +201,7 @@ def sma_crossover_agent(df, bank_start, short_window=1, long_window=8):
 
     return values
 
-def volatility_agent(df, bank_start, low_volatility_threshold_coeff=2, high_volatility_threshold_coeff=1.75):
+def volatility_agent(df, bank_start, low_volatility_threshold_coeff=3, high_volatility_threshold_coeff=2.25):
     bank = bank_start
     wallet = 0
     action = "buy"  # Initial action
