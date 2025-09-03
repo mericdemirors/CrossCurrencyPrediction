@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from itertools import product
 
-def random_all_in_agent(df, bank_start, buy_probability=0.75):
+def random_all_in_agent(df, bank_start, buy_probability=0.3):
     bank = bank_start
     wallet = 0
 
@@ -11,8 +11,8 @@ def random_all_in_agent(df, bank_start, buy_probability=0.75):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         if random.random() < buy_probability:
             if action == "buy" and bank > 0:
@@ -24,11 +24,11 @@ def random_all_in_agent(df, bank_start, buy_probability=0.75):
                 wallet = 0
                 action = "buy"
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
-def random_portional_agent(df, bank_start, buy_probability=0.8):
+def random_portional_agent(df, bank_start, buy_probability=0.15):
     bank = bank_start
     wallet = 0
 
@@ -36,8 +36,8 @@ def random_portional_agent(df, bank_start, buy_probability=0.8):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         if random.random() < buy_probability:
             portion_to_use = random.random()
@@ -51,7 +51,7 @@ def random_portional_agent(df, bank_start, buy_probability=0.8):
                 wallet = wallet - wallet*portion_to_use
                 action = "buy"
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
@@ -64,12 +64,12 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         # if it's time to buy, and we have money
         if action == "buy" and bank > 0:
-            wallet = bank / row_data["low"]
+            wallet = bank / today_data["low"]
             bank = 0
             action = "sell"
             prev_price_to_buy_or_sell = price_to_buy_or_sell
@@ -79,21 +79,35 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
         # or we are waiting for
         if buying_period != 0:
             buying_period -= 1
-            values.append(bank + wallet * price_to_buy_or_sell)
+            values.append(bank + wallet * today_data["close"])
             continue
 
         # if it's time to sell, and we have coin, and we can profit from selling
         if action == "sell" and wallet > 0 and price_to_buy_or_sell > prev_price_to_buy_or_sell:
-            bank = wallet * row_data["high"]
+            bank = wallet * today_data["high"]
             wallet = 0
             action = "buy"
             buying_period = wait_period
         
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
-def martingale_agent(df, bank_start, base_bet=1, set_holding_period=1):
+def holder_agent(df, bank_start):
+    bank = bank_start
+    wallet = 0
+
+    values = []
+    for i in range(len(df)):
+        today_data = df.iloc[i]
+        if i == 0:
+            wallet = bank / today_data["open"]
+            bank = 0
+        values.append(bank + wallet * today_data["close"])
+
+    return values
+
+def martingale_agent(df, bank_start, base_bet=1, set_holding_period=2):
     bank = bank_start
     wallet = 0   # Amount of coin
     current_bet = base_bet
@@ -104,8 +118,8 @@ def martingale_agent(df, bank_start, base_bet=1, set_holding_period=1):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         # Handle buy logic
         if action == "buy" and bank >= current_bet:
@@ -120,7 +134,7 @@ def martingale_agent(df, bank_start, base_bet=1, set_holding_period=1):
         elif action == "sell":
             holding_period -= 1
             if holding_period > 0:
-                values.append(bank + wallet * price_to_buy_or_sell)
+                values.append(bank + wallet * today_data["close"])
                 continue
             else:
                 # Holding period is over; decide whether to sell
@@ -141,7 +155,7 @@ def martingale_agent(df, bank_start, base_bet=1, set_holding_period=1):
                             current_bet = base_bet
                 action = "buy"
         
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
@@ -152,8 +166,8 @@ def dollar_cost_averaging_agent(df, bank_start, period=32):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         if i % period == 0 and bank >= periodic_investment_budget:
             # Invest the fixed amount
@@ -161,7 +175,7 @@ def dollar_cost_averaging_agent(df, bank_start, period=32):
             wallet += quantity_bought
             bank -= periodic_investment_budget
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
@@ -176,14 +190,14 @@ def sma_crossover_agent(df, bank_start, short_window=1, long_window=2):
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         # Check for crossover signals (avoiding the first few periods where SMAs are still calculating)
         if i > long_window:
             previous_row = df.iloc[i-1]
-            short_above_long = previous_row['SMA_short'] < previous_row['SMA_long'] and row_data['SMA_short'] > row_data['SMA_long']
-            short_below_long = previous_row['SMA_short'] > previous_row['SMA_long'] and row_data['SMA_short'] < row_data['SMA_long']
+            short_above_long = previous_row['SMA_short'] < previous_row['SMA_long'] and today_data['SMA_short'] > today_data['SMA_long']
+            short_below_long = previous_row['SMA_short'] > previous_row['SMA_long'] and today_data['SMA_short'] < today_data['SMA_long']
 
             if short_above_long and action == "buy" and bank > 0:
                 # Buy with all available bank
@@ -197,11 +211,11 @@ def sma_crossover_agent(df, bank_start, short_window=1, long_window=2):
                 wallet = 0
                 action = "buy"
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
-def volatility_agent(df, bank_start, low_volatility_threshold_coeff=3, high_volatility_threshold_coeff=2.25):
+def volatility_agent(df, bank_start, low_volatility_threshold_coeff=3, high_volatility_threshold_coeff=2.0):
     bank = bank_start
     wallet = 0
     action = "buy"  # Initial action
@@ -215,9 +229,9 @@ def volatility_agent(df, bank_start, low_volatility_threshold_coeff=3, high_vola
 
     values = []
     for i in range(len(df)):
-        row_data = df.iloc[i]
-        price_to_buy_or_sell = (row_data["open"] + row_data["close"] + row_data["low"] + row_data["high"]) / 4
-        atr = row_data["ATR"]
+        today_data = df.iloc[i]
+        price_to_buy_or_sell = today_data["open"]
+        atr = today_data["ATR"]
 
         # Define dynamic volatility thresholds based on the mean ATR
         mean_atr = df['ATR'].iloc[:i].mean() if i > 0 else atr  # Use historical mean
@@ -243,21 +257,20 @@ def volatility_agent(df, bank_start, low_volatility_threshold_coeff=3, high_vola
             wallet = 0
             action = "buy"
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * today_data["close"])
 
     return values
 
-def trend_following_agent(df, bank_start, buying_start=8, selling_start=16):
+def percentage_change_following_agent(df, bank_start, buying_start=8, selling_start=16):
     bank = bank_start
     wallet = 0
     action = "buy"  # Initial action
 
     values = []
     for i in range(len(df)):
-        price_to_buy_or_sell = df['close'].iloc[i]
-
         # Check for buy signal
         if action == "buy" and bank > 0 and i >= buying_start:
+            price_to_buy_or_sell = df['close'].iloc[i-1]
             previous_price = df['close'].iloc[i - buying_start]
             percentage_change = (price_to_buy_or_sell - previous_price) / previous_price
             if percentage_change >= 0.05:
@@ -268,6 +281,7 @@ def trend_following_agent(df, bank_start, buying_start=8, selling_start=16):
 
         # Check for sell signal
         elif action == "sell" and wallet > 0 and i >= selling_start:
+            price_to_buy_or_sell = df['close'].iloc[i-1]
             previous_price = df['close'].iloc[i - selling_start]
             percentage_change = (price_to_buy_or_sell - previous_price) / previous_price
             if percentage_change <= -0.05:
@@ -276,37 +290,211 @@ def trend_following_agent(df, bank_start, buying_start=8, selling_start=16):
                 wallet = 0
                 action = "buy"
 
+        price_to_buy_or_sell = df['close'].iloc[i-1]
         values.append(bank + wallet * price_to_buy_or_sell)
 
     return values
+
+def low_high_slope_agent(df, bank_start, window=1, error_margin=1):
+    bank = bank_start
+    wallet = 0
+    values = []
+    action = "buy"
+
+    for i in range(len(df)):
+        if i < window:
+            # Not enough history for prediction
+            values.append(bank + wallet * df.iloc[i]["close"])
+            continue
+
+        history = df.iloc[i-window:i]  # last window days
+        today_data = df.iloc[i]
+
+        # calculate slope of the low and high
+        slope_low = (history["low"].iloc[-1] - history["low"].iloc[0]) / window
+        slope_high = (history["high"].iloc[-1] - history["high"].iloc[0]) / window
+
+        # predict the today's low, today's high and tomorrow's high
+        predicted_low = history["low"].iloc[-1] + slope_low
+        predicted_high = history["high"].iloc[-1] + slope_high * 2
+        predicted_next_high = history["high"].iloc[-1] + slope_high * 2
+
+        # buy if you can profit today's low and tomorrow_high
+        buy_condition = (predicted_next_high - predicted_low) > 2 * error_margin and (predicted_low - today_data["low"]) > error_margin
+        
+        open_buy_condition = (predicted_high - today_data["open"]) > error_margin and (today_data["high"] - predicted_high) > error_margin
+
+        if action == "sell":
+            # sell the moment you go negative, or if today's predicted high is bigger than buying price
+            sell_condition = (predicted_next_high - buyed_at < 0) or (today_data["high"] - predicted_high) > error_margin
+
+        # if it's better to buy today's opening and sell at high rather than today's low to tomorrows high, do that
+        if open_buy_condition and predicted_high - today_data["open"] > predicted_next_high - predicted_low:
+            wallet = bank / today_data["open"]
+            bank = 0
+            action = "sell"
+            buyed_at = today_data["open"]            
+        else:
+            if action == "buy" and buy_condition and bank > 0:
+                wallet = bank / predicted_low
+                bank = 0
+                action = "sell"
+                buyed_at = predicted_low
+            elif action == "sell" and sell_condition:
+                bank = wallet * predicted_high
+                wallet = 0
+                action = "buy"
+
+        # Track portfolio value
+        values.append(bank + wallet * today_data["close"])
+
+    return values
+
+def yesterday_trend_breaking_agent(df, bank_start, lookback=4):
+    bank = bank_start
+    wallet = 0
+    values = []
+    action = "buy"
+
+    for i in range(len(df)):
+        if i < lookback:
+            values.append(bank + wallet * df.iloc[i]["close"])
+            continue
+
+        yesterday = df.iloc[i-1]
+        today_data = df.iloc[i]
+
+        # check the previous day's min max limits, except yesterday
+        trend_high = df["high"].iloc[i-lookback:i-1].max()
+        trend_low = df["low"].iloc[i-lookback:i-1].min()
+
+        # check if yesterdays high or low break these limits
+        # buy if yesterday peaked a new high (price will go up) or sell if yesterday dipped a new low (price will go down)
+        sell_condition = yesterday["close"] > trend_high
+        buy_condition = yesterday["close"] < trend_low
+
+        # use execution price within today's range
+        price_to_buy = today_data["open"]
+        price_to_sell = today_data["close"]
+
+        if action == "buy" and buy_condition and bank > 0:
+            wallet = bank / price_to_buy
+            bank = 0
+            action = "sell"
+        elif action == "sell" and sell_condition and wallet > 0:
+            bank = wallet * price_to_sell
+            wallet = 0
+            action = "buy"
+
+        values.append(bank + wallet * today_data["close"])
+    return values
+
+def mean_reversion_agent(df, bank_start, window=4, threshold=0.2):
+    bank = bank_start
+    wallet = 0
+    values = []
+    action = "buy"
+
+    df["ma"] = df["close"].rolling(window).mean()
+
+    for i in range(len(df)):
+        if i == 0 or pd.isna(df.iloc[i-1]["ma"]):
+            values.append(bank + wallet * df.iloc[i]["close"])
+            continue
+
+        yesterday = df.iloc[i-1]
+        today_data = df.iloc[i]
+
+        deviation = (yesterday["close"] - yesterday["ma"]) / yesterday["ma"]
+        buy_condition = deviation < -threshold
+        sell_condition = deviation > threshold
+
+        price_to_buy = today_data["open"]
+        price_to_sell = today_data["open"]
+
+        if action == "buy" and buy_condition and bank > 0:
+            wallet = bank / price_to_buy
+            bank = 0
+            action = "sell"
+        elif action == "sell" and sell_condition and wallet > 0:
+            bank = wallet * price_to_sell
+            wallet = 0
+            action = "buy"
+
+        values.append(bank + wallet * today_data["close"])
+    return values
+
+def candlestick_pattern_agent(df, bank_start):
+    bank = bank_start
+    wallet = 0
+    values = []
+
+    for i in range(len(df)):
+        if i == 0:
+            values.append(bank + wallet * df.iloc[i]["close"])
+            continue
+
+        yesterday = df.iloc[i-1]
+        today_data = df.iloc[i]
+
+        body = abs(yesterday["close"] - yesterday["open"])
+        candle_range = yesterday["high"] - yesterday["low"]
+
+        # Example: Hammer pattern (bullish reversal)
+        buy_condition = (body < (candle_range * 0.3)) and ((yesterday["close"] > yesterday["open"]))
+        # Example: Shooting star pattern (bearish reversal)
+        sell_condition = (body < (candle_range * 0.3)) and ((yesterday["close"] < yesterday["open"]))
+
+        price_to_buy = today_data["open"]
+        price_to_sell = today_data["open"]
+
+        if buy_condition and bank > 0:
+            wallet = bank / price_to_buy
+            bank = 0
+        elif sell_condition and wallet > 0:
+            bank = wallet * price_to_sell
+            wallet = 0
+
+        values.append(bank + wallet * today_data["close"])
+    return values
+
+# ----------------------------------------------------------------------------------------------------------
+
+strategies = {
+        "random_all_in_agent": random_all_in_agent,
+        "random_portional_agent": random_portional_agent,
+        "holder_buyer_seller_agent": holder_buyer_seller_agent,
+        "holder_agent": holder_agent,
+        "martingale_agent": martingale_agent,
+        "dollar_cost_averaging_agent": dollar_cost_averaging_agent,
+        "sma_crossover_agent": sma_crossover_agent,
+        "volatility_agent": volatility_agent,
+        "percentage_change_following_agent": percentage_change_following_agent,
+        "low_high_slope_agent": low_high_slope_agent,
+        "yesterday_trend_breaking_agent": yesterday_trend_breaking_agent,
+        "mean_reversion_agent": mean_reversion_agent,
+        "candlestick_pattern_agent": candlestick_pattern_agent,
+    }
 
 def grid_search_strategies(csv_path, coin_name, bank_start):
     df = pd.read_csv(csv_path, index_col="open_time")
     df = df[[col for col in df.columns if coin_name in col]]
     df.columns = [col.split("_")[1] for col in df.columns]
 
-    strategies = {
-        'random_all_in_agent': random_all_in_agent,
-        'random_portional_agent': random_portional_agent,
-        'holder_buyer_seller_agent': holder_buyer_seller_agent,
-        'martingale_agent': martingale_agent,
-        'dollar_cost_averaging_agent': dollar_cost_averaging_agent,
-        'sma_crossover_agent': sma_crossover_agent,
-        'volatility_agent': volatility_agent,
-        'trend_following_agent': trend_following_agent
-    }
-
     hyperparameters = {
-        'random_all_in_agent': {'buy_probability': [x/10 for x in range(10)]},
-        'random_portional_agent': {'buy_probability': [x/10 for x in range(10)]},
-        'holder_buyer_seller_agent': {'wait_period': [1, 4, 8, 16, 32, 48]},
-        'martingale_agent': {'base_bet': [1, 2, 5, 10, 20, 50, 100, 200, 500], 'set_holding_period': [1,2,4,8,16,32]},
-        'dollar_cost_averaging_agent': {'period': [1, 4, 8, 16, 32, 48]},
-        'sma_crossover_agent': {'short_window': [1, 4, 8, 16], 'long_window': [8, 16, 32, 48]},
-        'volatility_agent': {'low_volatility_threshold_coeff': [1.0, 1.25, 1.5, 1.75, 2], 'high_volatility_threshold_coeff': [1.5, 1.75, 2, 2.25, 2.5, 3.0]},
-        'trend_following_agent': {'buying_start': [1, 4, 8, 16], 'selling_start': [1, 4, 8, 16]}
-    }
-
+        'random_all_in_agent': {'buy_probability': [x/20 for x in range(20)]},
+        'random_portional_agent': {'buy_probability': [x/20 for x in range(20)]},
+        'holder_buyer_seller_agent': {'wait_period': [1, 2, 4, 8, 16, 32, 48, 64]},
+        'holder_agent': {},
+        'martingale_agent': {'base_bet': [1, 2, 5, 10, 20, 50, 100],'set_holding_period': [1, 2, 4, 8, 16, 32]},
+        'dollar_cost_averaging_agent': {'period': [1, 2, 4, 8, 16, 32, 64]},
+        'sma_crossover_agent': {'short_window': [1, 2, 4, 8, 16],'long_window': [2, 4, 8, 16, 32, 64]},
+        'volatility_agent': {'low_volatility_threshold_coeff': [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0],'high_volatility_threshold_coeff': [1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]},
+        'percentage_change_following_agent': {'buying_start': [1, 2, 4, 8, 16, 32],'selling_start': [1, 2, 4, 8, 16, 32]},
+        'low_high_slope_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'error_margin': [1, 2, 4, 8, 16, 32, 50, 100, 250, 500]},
+        'yesterday_trend_breaking_agent': {'lookback': [1, 2, 4, 8, 16, 32, 48]},
+        'mean_reversion_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'threshold': [0.01, 0.025, 0.05, 0.1, 0.2]},
+        'candlestick_pattern_agent': {'body_ratio': [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4],'lookback': [1, 2, 4, 8, 16, 32, 48]}}
 
     best_results = {}
     for name, agent in strategies.items():
@@ -340,35 +528,8 @@ def get_trading_agent_values(csv_to_infer, coin_to_infer, toast_bread_wait, bank
     df = df[[col for col in df.columns if coin_to_infer in col]]
     df.columns = [col.split("_")[1] for col in df.columns]
 
-    random_all_in_values = random_all_in_agent(df.copy(), bank_start)
-    random_portional_values = random_portional_agent(df.copy(), bank_start)
-    holder_buyer_seller_values = holder_buyer_seller_agent(df.copy(), bank_start)
-    martingale_values = martingale_agent(df.copy(), bank_start)
-    dollar_cost_averaging_values = dollar_cost_averaging_agent(df.copy(), bank_start)
-    sma_crossover_values = sma_crossover_agent(df.copy(), bank_start)
-    volatility_values = volatility_agent(df.copy(), bank_start)
-    trend_following_values = trend_following_agent(df.copy(), bank_start)
+    agents_and_values = {}
+    for agent_name, agent_func in strategies.items():
+        agents_and_values[agent_name] = agent_func(df.copy(), bank_start)
 
-    agents = ["random_all_in_values", "random_portional_values", "holder_buyer_seller_values", "martingale_values", "dollar_cost_averaging_values", "sma_crossover_values", "volatility_values", "trend_following_values"]
-    values = [random_all_in_values, random_portional_values, holder_buyer_seller_values, martingale_values, dollar_cost_averaging_values, sma_crossover_values, volatility_values, trend_following_values]
-    regular_agent_values = {agent:value for (agent,value) in zip(agents, values)}
-
-    df_late_start = pd.read_csv(csv_to_infer, index_col="open_time")
-    df_late_start = df_late_start[[col for col in df_late_start.columns if coin_to_infer in col]]
-    df_late_start.columns = [col.split("_")[1] for col in df_late_start.columns]
-    df_late_start = df_late_start.iloc[toast_bread_wait:]
-
-    random_all_in_values = random_all_in_agent(df_late_start.copy(), bank_start)
-    random_portional_values = random_portional_agent(df_late_start.copy(), bank_start)
-    holder_buyer_seller_values = holder_buyer_seller_agent(df_late_start.copy(), bank_start)
-    martingale_values = martingale_agent(df_late_start.copy(), bank_start)
-    dollar_cost_averaging_values = dollar_cost_averaging_agent(df_late_start.copy(), bank_start)
-    sma_crossover_values = sma_crossover_agent(df_late_start.copy(), bank_start)
-    volatility_values = volatility_agent(df_late_start.copy(), bank_start)
-    trend_following_values = trend_following_agent(df_late_start.copy(), bank_start)
-
-    agents = ["random_all_in_values", "random_portional_values", "holder_buyer_seller_values", "martingale_values", "dollar_cost_averaging_values", "sma_crossover_values", "volatility_values", "trend_following_values"]
-    values = [random_all_in_values, random_portional_values, holder_buyer_seller_values, martingale_values, dollar_cost_averaging_values, sma_crossover_values, volatility_values, trend_following_values]
-    late_start_agent_values = {agent:value for (agent,value) in zip(agents, values)}
-
-    return regular_agent_values, late_start_agent_values
+    return agents_and_values

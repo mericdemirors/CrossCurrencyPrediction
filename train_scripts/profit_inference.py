@@ -447,9 +447,9 @@ def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_va
         plt.plot(v, color=c, label=k)
         plt.text(len(v) - 1, v[-1], f" {k}", color=c, va="center", fontsize=15)
         
-    min_100 = int(min([min(vs) for vs in trading_agents_and_values.values()]))
-    max_100 = int(max([max(vs) for vs in trading_agents_and_values.values()]))
-    for y in range(min_100, max_100 + 1, 100):
+    min_10000 = int(min(min(toast_bread_values), min([min(vs) for vs in trading_agents_and_values.values()])))
+    max_10000 = int(max(max(toast_bread_values), max([max(vs) for vs in trading_agents_and_values.values()])))
+    for y in range(min_10000, max_10000 + 1, 10000):
         plt.axhline(y=y, color="gray", linestyle=":", linewidth=0.8)
 
     plt.plot(start_filled_toast_bread, color="black", linestyle="--", linewidth=2, label="toast_bread")
@@ -459,8 +459,5 @@ def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_va
     plt.title(f'Trading Strategies Profit Comparison')
     plt.xlabel("Time")
     plt.ylabel("$ Value")
-    if toast_bread_wait == 1:
-        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with_equal_start.png'))
-    else:
-        plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with late_start.png'))
+    plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with_equal_start.png'))
     plt.close()
