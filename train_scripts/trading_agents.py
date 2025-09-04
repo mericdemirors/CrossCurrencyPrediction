@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from itertools import product
 
 def random_all_in_agent(df, bank_start, buy_probability=0.3):
@@ -69,7 +70,7 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
 
         # if it's time to buy, and we have money
         if action == "buy" and bank > 0:
-            wallet = bank / today_data["low"]
+            wallet = bank / today_data["open"]
             bank = 0
             action = "sell"
             prev_price_to_buy_or_sell = price_to_buy_or_sell
@@ -84,7 +85,7 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
 
         # if it's time to sell, and we have coin, and we can profit from selling
         if action == "sell" and wallet > 0 and price_to_buy_or_sell > prev_price_to_buy_or_sell:
-            bank = wallet * today_data["high"]
+            bank = wallet * today_data["close"]
             wallet = 0
             action = "buy"
             buying_period = wait_period
@@ -191,23 +192,22 @@ def sma_crossover_agent(df, bank_start, short_window=1, long_window=2):
     values = []
     for i in range(len(df)):
         today_data = df.iloc[i]
-        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
 
         # Check for crossover signals (avoiding the first few periods where SMAs are still calculating)
         if i > long_window:
             previous_row = df.iloc[i-1]
-            short_above_long = previous_row['SMA_short'] < previous_row['SMA_long'] and today_data['SMA_short'] > today_data['SMA_long']
-            short_below_long = previous_row['SMA_short'] > previous_row['SMA_long'] and today_data['SMA_short'] < today_data['SMA_long']
+            short_above_long = previous_row['SMA_short'] > previous_row['SMA_long']
+            short_below_long = previous_row['SMA_short'] < previous_row['SMA_long']
 
             if short_above_long and action == "buy" and bank > 0:
                 # Buy with all available bank
-                wallet = bank / price_to_buy_or_sell
+                wallet = bank / today_data["open"]
                 bank = 0
                 action = "sell"
 
             elif short_below_long and action == "sell" and wallet > 0:
                 # Sell all available wallet
-                bank = wallet * price_to_buy_or_sell
+                bank = wallet * today_data["open"]
                 wallet = 0
                 action = "buy"
 
@@ -295,7 +295,7 @@ def percentage_change_following_agent(df, bank_start, buying_start=8, selling_st
 
     return values
 
-def low_high_slope_agent(df, bank_start, window=1, error_margin=1):
+def low_high_slope_agent(df, bank_start, window=16, error_margin=1):
     bank = bank_start
     wallet = 0
     values = []
@@ -316,32 +316,36 @@ def low_high_slope_agent(df, bank_start, window=1, error_margin=1):
 
         # predict the today's low, today's high and tomorrow's high
         predicted_low = history["low"].iloc[-1] + slope_low
-        predicted_high = history["high"].iloc[-1] + slope_high * 2
+        predicted_high = history["high"].iloc[-1] + slope_high
         predicted_next_high = history["high"].iloc[-1] + slope_high * 2
-
-        # buy if you can profit today's low and tomorrow_high
-        buy_condition = (predicted_next_high - predicted_low) > 2 * error_margin and (predicted_low - today_data["low"]) > error_margin
         
-        open_buy_condition = (predicted_high - today_data["open"]) > error_margin and (today_data["high"] - predicted_high) > error_margin
+        # buy at open and sell at today's high
+        open_buy_condition = ((predicted_high - today_data["open"]) > error_margin) and ((today_data["high"] - predicted_high) > error_margin)
+        # buy at today's low and sell at tomorrow's high
+        buy_condition = ((predicted_next_high - predicted_low) > 2 * error_margin) and ((predicted_low - today_data["low"]) > error_margin)
 
         if action == "sell":
             # sell the moment you go negative, or if today's predicted high is bigger than buying price
-            sell_condition = (predicted_next_high - buyed_at < 0) or (today_data["high"] - predicted_high) > error_margin
+            sell_condition = ((today_data["open"] - buyed_at < 0) or (predicted_high - buyed_at) > error_margin) and ((today_data["high"] - predicted_high) > error_margin)
 
         # if it's better to buy today's opening and sell at high rather than today's low to tomorrows high, do that
-        if open_buy_condition and predicted_high - today_data["open"] > predicted_next_high - predicted_low:
+        if action == "buy" and open_buy_condition and predicted_high - today_data["open"] > predicted_next_high - predicted_low:
             wallet = bank / today_data["open"]
             bank = 0
             action = "sell"
-            buyed_at = today_data["open"]            
+            buyed_at = today_data["open"]
+
+            bank = wallet * (predicted_high - error_margin)
+            wallet = 0
+            action = "buy"
         else:
             if action == "buy" and buy_condition and bank > 0:
-                wallet = bank / predicted_low
+                wallet = bank / (predicted_low + error_margin)
                 bank = 0
                 action = "sell"
-                buyed_at = predicted_low
+                buyed_at = (predicted_low + error_margin)
             elif action == "sell" and sell_condition:
-                bank = wallet * predicted_high
+                bank = wallet * (predicted_high - error_margin)
                 wallet = 0
                 action = "buy"
 
@@ -424,10 +428,11 @@ def mean_reversion_agent(df, bank_start, window=4, threshold=0.2):
         values.append(bank + wallet * today_data["close"])
     return values
 
-def candlestick_pattern_agent(df, bank_start):
+def candlestick_pattern_agent(df, bank_start, body_ratio=0.2):
     bank = bank_start
     wallet = 0
     values = []
+    action = "buy"
 
     for i in range(len(df)):
         if i == 0:
@@ -441,19 +446,54 @@ def candlestick_pattern_agent(df, bank_start):
         candle_range = yesterday["high"] - yesterday["low"]
 
         # Example: Hammer pattern (bullish reversal)
-        buy_condition = (body < (candle_range * 0.3)) and ((yesterday["close"] > yesterday["open"]))
+        buy_condition = (body < (candle_range * body_ratio)) and ((yesterday["close"] > yesterday["open"]))
         # Example: Shooting star pattern (bearish reversal)
-        sell_condition = (body < (candle_range * 0.3)) and ((yesterday["close"] < yesterday["open"]))
+        sell_condition = (body < (candle_range * body_ratio)) and ((yesterday["close"] < yesterday["open"]))
 
         price_to_buy = today_data["open"]
         price_to_sell = today_data["open"]
 
-        if buy_condition and bank > 0:
+        if action == "buy" and buy_condition and bank > 0:
             wallet = bank / price_to_buy
             bank = 0
-        elif sell_condition and wallet > 0:
+            action = "sell"
+        elif action == "sell" and sell_condition and wallet > 0:
             bank = wallet * price_to_sell
             wallet = 0
+            action = "buy"
+
+        values.append(bank + wallet * today_data["close"])
+    return values
+
+def buy_yesterdays_low_sell_yesterdays_high_agent(df, bank_start, error_margin=1):
+    bank = bank_start
+    wallet = 0
+    values = []
+    action = "buy"
+
+    for i in range(len(df)):
+        today_data = df.iloc[i]
+        if i == 0:
+            values.append(bank + wallet * today_data["close"])
+            continue
+
+        yesterday = df.iloc[i-1]
+        # look at yesterday's low, and buy at that price + some margin if it happens today
+        if action == "buy" and yesterday["low"] - today_data["low"] > error_margin and bank > 0 and today_data["low"] <= yesterday["low"] <= today_data["high"]:
+            wallet = bank / (yesterday["low"] + error_margin)
+            bank = 0
+            action = "sell"
+            buyed_at = today_data["low"]
+        # if we are selling, look at yesterday's high, and sell at that price - some margin if it happens today
+        elif action == "sell" and today_data["high"] - yesterday["high"] > error_margin and wallet > 0 and today_data["low"] <= yesterday["high"] <= today_data["high"]:
+            bank = wallet * (yesterday["high"] - error_margin)
+            wallet = 0
+            action = "buy"
+        # if we are selling and in the negative at the end of the day, sell today from closing price
+        elif action == "sell" and buyed_at > today_data["close"]:
+            bank = wallet * today_data["close"]
+            wallet = 0
+            action = "buy"
 
         values.append(bank + wallet * today_data["close"])
     return values
@@ -474,6 +514,7 @@ strategies = {
         "yesterday_trend_breaking_agent": yesterday_trend_breaking_agent,
         "mean_reversion_agent": mean_reversion_agent,
         "candlestick_pattern_agent": candlestick_pattern_agent,
+        "buy_yesterdays_low_sell_yesterdays_high_agent":buy_yesterdays_low_sell_yesterdays_high_agent,
     }
 
 def grid_search_strategies(csv_path, coin_name, bank_start):
@@ -494,7 +535,8 @@ def grid_search_strategies(csv_path, coin_name, bank_start):
         'low_high_slope_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'error_margin': [1, 2, 4, 8, 16, 32, 50, 100, 250, 500]},
         'yesterday_trend_breaking_agent': {'lookback': [1, 2, 4, 8, 16, 32, 48]},
         'mean_reversion_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'threshold': [0.01, 0.025, 0.05, 0.1, 0.2]},
-        'candlestick_pattern_agent': {'body_ratio': [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4],'lookback': [1, 2, 4, 8, 16, 32, 48]}}
+        'candlestick_pattern_agent': {'body_ratio': [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4]},
+        "buy_yesterdays_low_sell_yesterdays_high_agent": {"error_margin":[1, 2, 4, 8, 16, 32, 50, 100, 250, 500]}}
 
     best_results = {}
     for name, agent in strategies.items():
@@ -523,13 +565,13 @@ def grid_search_strategies(csv_path, coin_name, bank_start):
     for name, result in best_results.items():
         print(f"Strategy: {name:<30} | Best Parameters: {str(result['params']):<60} | Best Final Value: {result['last_value']:.2f}")
 
-def get_trading_agent_values(csv_to_infer, coin_to_infer, toast_bread_wait, bank_start=1000):
+def get_trading_agent_values(csv_to_infer, coin_to_infer, bank_start=1000):
     df = pd.read_csv(csv_to_infer, index_col="open_time")
     df = df[[col for col in df.columns if coin_to_infer in col]]
     df.columns = [col.split("_")[1] for col in df.columns]
 
     agents_and_values = {}
-    for agent_name, agent_func in strategies.items():
+    for agent_name, agent_func in tqdm(strategies.items(), desc="trading agents", leave=False):
         agents_and_values[agent_name] = agent_func(df.copy(), bank_start)
 
     return agents_and_values

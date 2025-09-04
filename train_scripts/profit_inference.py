@@ -56,7 +56,7 @@ def get_orders(oclh, error_margin):
 
     return orders
 
-def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_margin=0):
+def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_margin):
     """
     Toast Bread strategy is a strategy that I came up with, which utilizes the limited future insight that keeps flowing when time progresses. It consists of 2 stages: stage A where the agent creates a plan and stage B/C where the agent acts upon the newly came future insight. Before explaining the underlying logic, first lets talk about a scenario where our trained models make predictions for the 8 upcoming time-series data with 6 hours intervals. It predicts 4 features for each interval: open, close, low and high. So our future-insight is in this format: [d1.0-6, d1.6-12, d1.12-18, d1.18-24, d2.0-6, d2.6-12, d2.12-18, d2.18-24] where di.s-e means ith interval's [open, close, low, end] information for the interval between start hour s and end hour h.
     And these are the terms for having common ground on the explanations.
@@ -99,7 +99,7 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
     intended_orders = []
     values = []
     all_predictions = all_predictions.numpy()
-    for i in tqdm(range(len(df))):
+    for i in tqdm(range(len(df)), desc="toast bread", leave=False):
         oclh_initial = df.iloc[i].values
 
         oclh_predictions = all_predictions[i]
@@ -119,7 +119,6 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
         oclh_to_buy_sell_from = df.iloc[i+1].values
         # now transform the oclh back into the open,close,low,high ordered columns
         oclh_to_buy_sell_from = oclh_to_buy_sell_from[permute_order]
-        price_to_buy_or_sell = np.mean(oclh_to_buy_sell_from)
 
         if ongoing_order is None:
             orders = get_orders(oclh_predictions.T, error_margin)
@@ -127,10 +126,10 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
             if len(orders) > 0 and orders[0]["buy_interval"] == 0:
                 ongoing_order = orders[0]
                 if bank > 0:
-                    price_to_buy_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
+                    real_price_for_buying = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
                     
-                    if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
-                        ongoing_order["buy_price"] = price_to_buy_from
+                    if ongoing_order["buy_price"] + error_margin > real_price_for_buying:
+                        ongoing_order["buy_price"] = error_margin + ongoing_order["buy_price"]
                         intended_order = ongoing_order.copy()
                         intended_order["buy_interval"] = intended_order["buy_interval"] + i + 1
                         intended_order["sell_interval"] = intended_order["sell_interval"] + i + 1
@@ -140,20 +139,27 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                         buys.append((i+1, ongoing_order["buy_price"]))
                         # print("buying at", i, "to open the ongoing order", ongoing_order)
                     else:
-                        values.append(bank + wallet * price_to_buy_or_sell)
+                        values.append(bank + wallet * oclh_to_buy_sell_from[1])
                         continue                        
             else:
-                values.append(bank + wallet * price_to_buy_or_sell)
+                values.append(bank + wallet * oclh_to_buy_sell_from[1])
                 continue
             
             if ongoing_order["sell_interval"] == 0:
                 if wallet > 0:
-                    price_to_sell_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
-                    
-                    ongoing_order["sell_price"] = price_to_sell_from
-                    bank += wallet * ongoing_order["sell_price"]
-                    wallet = 0
-                    sells.append((i+1, ongoing_order["sell_price"]))
+                    real_price_for_selling = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
+
+                    if ongoing_order["sell_price"] - error_margin < real_price_for_selling:
+                        ongoing_order["sell_price"] = ongoing_order["sell_price"] - error_margin
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+                    else: # if we couldn't profit, sell at today's close
+                        ongoing_order["sell_price"] = oclh_to_buy_sell_from[1]
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+
                     # print("selling at", i, "to open the ongoing order", ongoing_order)
                 ongoing_order = None
             
@@ -194,11 +200,19 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
             # if we set the ongoing_order sell date as today, sell it
             if ongoing_order["sell_interval"] == 0:
                 if wallet > 0:
-                    price_to_sell_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
-                    ongoing_order["sell_price"] = price_to_sell_from
-                    bank += wallet * ongoing_order["sell_price"]
-                    wallet = 0
-                    sells.append((i+1, ongoing_order["sell_price"]))
+                    real_price_for_selling = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][1]]
+
+                    if ongoing_order["sell_price"] - error_margin < real_price_for_selling:
+                        ongoing_order["sell_price"] = ongoing_order["sell_price"] - error_margin
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+                    else: # if we couldn't profit, sell at today's close
+                        ongoing_order["sell_price"] = oclh_to_buy_sell_from[1]
+                        bank += wallet * ongoing_order["sell_price"]
+                        wallet = 0
+                        sells.append((i+1, ongoing_order["sell_price"]))
+
                     # print("selling at", i, "to open the ongoing order", ongoing_order)
                 ongoing_order = None
 
@@ -206,10 +220,10 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                 sold_at_first_order_open_to_buy_later_for_first_order = False
                 ongoing_order = first_order
                 if bank > 0:
-                    price_to_buy_from = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
+                    real_price_for_buying = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
                     
-                    if price_to_buy_from + error_margin < ongoing_order["buy_price"]:
-                        ongoing_order["buy_price"] = price_to_buy_from
+                    if ongoing_order["buy_price"] + error_margin > real_price_for_buying:
+                        ongoing_order["buy_price"] = ongoing_order["buy_price"] + error_margin
                         intended_order = ongoing_order.copy()
                         intended_order["buy_interval"] = intended_order["buy_interval"] + i + 1
                         intended_order["sell_interval"] = intended_order["sell_interval"] + i + 1
@@ -219,12 +233,12 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                         buys.append((i+1, ongoing_order["buy_price"]))
                         # print("buying at", i, "sold_at_first_order_open_to_buy_later_for_first_order", ongoing_order)
                     else:
-                        values.append(bank + wallet * price_to_buy_or_sell)
+                        values.append(bank + wallet * oclh_to_buy_sell_from[1])
                         continue
                 ongoing_order["buy_interval"] -= 1
                 ongoing_order["sell_interval"] -= 1
 
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * oclh_to_buy_sell_from[1])
 
 def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta):
     df = df.reset_index()
@@ -352,7 +366,7 @@ def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predic
     fig.update_layout(height=600)
     fig.show()
 
-def profit_inference(train_session_dir, csv_to_infer):
+def profit_inference(train_session_dir, csv_to_infer, bank_start, error_margin):
     # read the training session data and recreate the training environment for inference
     json_to_inference = os.path.join(train_session_dir,"args.json")
     with open(json_to_inference, 'r') as f:
@@ -396,7 +410,7 @@ def profit_inference(train_session_dir, csv_to_infer):
     all_predictions = []
 
     with torch.no_grad():
-        for i in tqdm(range(len(inference_dataset) + args.output_window), leave=False):
+        for i in tqdm(range(len(inference_dataset) + args.output_window), desc="profit inference", leave=False):
             x_batch, y_batch = inference_dataset[i]
             x_batch = x_batch.unsqueeze(0)
             x_batch = x_batch.to(device)
@@ -431,8 +445,8 @@ def profit_inference(train_session_dir, csv_to_infer):
     # so if we are at the end of the interval0, df[i] will give the data from interval0, and all_predictions will give the data from interval1-8
     # we will use the df[i] as an initial price for teh all_predictions[i]
 
-    values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=1000, error_margin=10)
-    plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
+    values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=bank_start, error_margin=error_margin)
+    # plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
     
     return values
 
@@ -447,9 +461,9 @@ def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_va
         plt.plot(v, color=c, label=k)
         plt.text(len(v) - 1, v[-1], f" {k}", color=c, va="center", fontsize=15)
         
-    min_10000 = int(min(min(toast_bread_values), min([min(vs) for vs in trading_agents_and_values.values()])))
-    max_10000 = int(max(max(toast_bread_values), max([max(vs) for vs in trading_agents_and_values.values()])))
-    for y in range(min_10000, max_10000 + 1, 10000):
+    min_1000 = int(min(min(toast_bread_values), min([min(vs) for vs in trading_agents_and_values.values()])))
+    max_1000 = int(max(max(toast_bread_values), max([max(vs) for vs in trading_agents_and_values.values()])))
+    for y in range(min_1000, max_1000 + 1, 1000):
         plt.axhline(y=y, color="gray", linestyle=":", linewidth=0.8)
 
     plt.plot(start_filled_toast_bread, color="black", linestyle="--", linewidth=2, label="toast_bread")
@@ -460,4 +474,4 @@ def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_va
     plt.xlabel("Time")
     plt.ylabel("$ Value")
     plt.savefig(os.path.join(train_session_dir, f'evaluation_graphs/profit_comparison_with_equal_start.png'))
-    plt.close()
+    plt.show()

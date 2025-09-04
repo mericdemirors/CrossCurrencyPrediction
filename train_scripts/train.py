@@ -112,7 +112,7 @@ def run_inference_and_plot(model, loader, train_session_dir, model_name, epoch_i
     all_predictions = []
 
     with torch.no_grad():
-        for x_batch, y_batch in tqdm(loader, leave=False):
+        for x_batch, y_batch in tqdm(loader, desc="inference plotting", leave=False):
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
 
