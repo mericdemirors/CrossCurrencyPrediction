@@ -445,8 +445,8 @@ def profit_inference(train_session_dir, csv_to_infer, bank_start, error_margin):
     # so if we are at the end of the interval0, df[i] will give the data from interval0, and all_predictions will give the data from interval1-8
     # we will use the df[i] as an initial price for teh all_predictions[i]
 
-    values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=bank_start, error_margin=error_margin)
-    # plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
+    values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=bank_start, error_margin=0)
+    plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
     
     return values
 

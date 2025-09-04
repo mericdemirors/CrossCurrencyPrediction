@@ -295,7 +295,7 @@ def percentage_change_following_agent(df, bank_start, buying_start=8, selling_st
 
     return values
 
-def low_high_slope_agent(df, bank_start, window=16, error_margin=1):
+def low_high_slope_agent(df, bank_start, window=16, error_margin=0):
     bank = bank_start
     wallet = 0
     values = []
@@ -465,7 +465,7 @@ def candlestick_pattern_agent(df, bank_start, body_ratio=0.2):
         values.append(bank + wallet * today_data["close"])
     return values
 
-def buy_yesterdays_low_sell_yesterdays_high_agent(df, bank_start, error_margin=1):
+def buy_yesterdays_low_sell_yesterdays_high_agent(df, bank_start, error_margin=0):
     bank = bank_start
     wallet = 0
     values = []
