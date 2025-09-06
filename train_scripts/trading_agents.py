@@ -66,7 +66,7 @@ def holder_buyer_seller_agent(df, bank_start, wait_period=1):
     values = []
     for i in range(len(df)):
         today_data = df.iloc[i]
-        price_to_buy_or_sell = (today_data["open"] + today_data["close"] + today_data["low"] + today_data["high"]) / 4
+        price_to_buy_or_sell = today_data["open"]
 
         # if it's time to buy, and we have money
         if action == "buy" and bank > 0:
@@ -268,11 +268,12 @@ def percentage_change_following_agent(df, bank_start, buying_start=8, selling_st
 
     values = []
     for i in range(len(df)):
+        price_to_buy_or_sell = df['open'].iloc[i]
+        last_close_price = df['close'].iloc[i-1]
         # Check for buy signal
         if action == "buy" and bank > 0 and i >= buying_start:
-            price_to_buy_or_sell = df['close'].iloc[i-1]
-            previous_price = df['close'].iloc[i - buying_start]
-            percentage_change = (price_to_buy_or_sell - previous_price) / previous_price
+            start_close_price = df['close'].iloc[i - buying_start]
+            percentage_change = (last_close_price - start_close_price) / start_close_price
             if percentage_change >= 0.05:
                 # Buy with all available bank
                 wallet = bank / price_to_buy_or_sell
@@ -281,17 +282,15 @@ def percentage_change_following_agent(df, bank_start, buying_start=8, selling_st
 
         # Check for sell signal
         elif action == "sell" and wallet > 0 and i >= selling_start:
-            price_to_buy_or_sell = df['close'].iloc[i-1]
-            previous_price = df['close'].iloc[i - selling_start]
-            percentage_change = (price_to_buy_or_sell - previous_price) / previous_price
+            start_close_price = df['close'].iloc[i - selling_start]
+            percentage_change = (last_close_price - start_close_price) / start_close_price
             if percentage_change <= -0.05:
                 # Sell all available wallet
                 bank = wallet * price_to_buy_or_sell
                 wallet = 0
                 action = "buy"
 
-        price_to_buy_or_sell = df['close'].iloc[i-1]
-        values.append(bank + wallet * price_to_buy_or_sell)
+        values.append(bank + wallet * df['close'].iloc[i])
 
     return values
 
@@ -565,7 +564,7 @@ def grid_search_strategies(csv_path, coin_name, bank_start):
     for name, result in best_results.items():
         print(f"Strategy: {name:<30} | Best Parameters: {str(result['params']):<60} | Best Final Value: {result['last_value']:.2f}")
 
-def get_trading_agent_values(csv_to_infer, coin_to_infer, bank_start=1000):
+def get_trading_agent_values(csv_to_infer, coin_to_infer, bank_start):
     df = pd.read_csv(csv_to_infer, index_col="open_time")
     df = df[[col for col in df.columns if coin_to_infer in col]]
     df.columns = [col.split("_")[1] for col in df.columns]

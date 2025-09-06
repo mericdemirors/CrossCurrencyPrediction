@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+import gc
 import json
 import argparse
 import numpy as np
@@ -100,6 +101,8 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
     values = []
     all_predictions = all_predictions.numpy()
     for i in tqdm(range(len(df)), desc="toast bread", leave=False):
+        if i % 100 == 0:
+            gc.collect()
         oclh_initial = df.iloc[i].values
 
         oclh_predictions = all_predictions[i]
@@ -129,18 +132,19 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                     real_price_for_buying = oclh_to_buy_sell_from[ongoing_order["buy_sell_features"][0]]
                     
                     if ongoing_order["buy_price"] + error_margin > real_price_for_buying:
-                        ongoing_order["buy_price"] = error_margin + ongoing_order["buy_price"]
+                        ongoing_order["buy_price"] = ongoing_order["buy_price"] + error_margin
                         intended_order = ongoing_order.copy()
                         intended_order["buy_interval"] = intended_order["buy_interval"] + i + 1
                         intended_order["sell_interval"] = intended_order["sell_interval"] + i + 1
                         intended_orders.append(intended_order)
                         wallet += bank / ongoing_order["buy_price"]
                         bank = 0
-                        buys.append((i+1, ongoing_order["buy_price"]))
+                        buys.append((i+1, ongoing_order["buy_price"], ongoing_order["buy_sell_features"][0]))
                         # print("buying at", i, "to open the ongoing order", ongoing_order)
                     else:
+                        ongoing_order = None
                         values.append(bank + wallet * oclh_to_buy_sell_from[1])
-                        continue                        
+                        continue
             else:
                 values.append(bank + wallet * oclh_to_buy_sell_from[1])
                 continue
@@ -153,15 +157,15 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                         ongoing_order["sell_price"] = ongoing_order["sell_price"] - error_margin
                         bank += wallet * ongoing_order["sell_price"]
                         wallet = 0
-                        sells.append((i+1, ongoing_order["sell_price"]))
+                        sells.append((i+1, ongoing_order["sell_price"], ongoing_order["buy_sell_features"][1]))
                     else: # if we couldn't profit, sell at today's close
                         ongoing_order["sell_price"] = oclh_to_buy_sell_from[1]
                         bank += wallet * ongoing_order["sell_price"]
                         wallet = 0
-                        sells.append((i+1, ongoing_order["sell_price"]))
+                        sells.append((i+1, ongoing_order["sell_price"], ongoing_order["buy_sell_features"][1]))
 
                     # print("selling at", i, "to open the ongoing order", ongoing_order)
-                ongoing_order = None
+                    ongoing_order = None
             
             if ongoing_order:
                 ongoing_order["buy_interval"] -= 1
@@ -206,15 +210,15 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                         ongoing_order["sell_price"] = ongoing_order["sell_price"] - error_margin
                         bank += wallet * ongoing_order["sell_price"]
                         wallet = 0
-                        sells.append((i+1, ongoing_order["sell_price"]))
+                        sells.append((i+1, ongoing_order["sell_price"], ongoing_order["buy_sell_features"][1]))
                     else: # if we couldn't profit, sell at today's close
                         ongoing_order["sell_price"] = oclh_to_buy_sell_from[1]
                         bank += wallet * ongoing_order["sell_price"]
                         wallet = 0
-                        sells.append((i+1, ongoing_order["sell_price"]))
+                        sells.append((i+1, ongoing_order["sell_price"], ongoing_order["buy_sell_features"][1]))
 
                     # print("selling at", i, "to open the ongoing order", ongoing_order)
-                ongoing_order = None
+                    ongoing_order = None
 
             if sold_at_first_order_open_to_buy_later_for_first_order:
                 sold_at_first_order_open_to_buy_later_for_first_order = False
@@ -230,11 +234,14 @@ def toast_bread_agent(inference_dataset, df, all_predictions, bank_start, error_
                         intended_orders.append(intended_order)
                         wallet += bank / ongoing_order["buy_price"]
                         bank = 0
-                        buys.append((i+1, ongoing_order["buy_price"]))
+                        buys.append((i+1, ongoing_order["buy_price"], ongoing_order["buy_sell_features"][0]))
                         # print("buying at", i, "sold_at_first_order_open_to_buy_later_for_first_order", ongoing_order)
                     else:
+                        ongoing_order = None
                         values.append(bank + wallet * oclh_to_buy_sell_from[1])
                         continue
+            
+            if ongoing_order:
                 ongoing_order["buy_interval"] -= 1
                 ongoing_order["sell_interval"] -= 1
 
@@ -270,23 +277,21 @@ def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predic
         fig.add_trace(go.Scatter(x=[row["close_time"], row["close_time"]],y=[row["low"], row["high"]],mode="lines",line=dict(color="gray", width=1, dash="dot"),showlegend=False))
 
     # calculates the time of the buy sell to plot nicely
-    def get_trade_time(row, price):
+    def get_trade_time(row, feature):
         open_t = row["open_time"]
         end_t = row["close_time"]
 
-        if price == row["open"]:
+        if feature == 0:
             return open_t
-        elif price == row["close"]:
+        elif feature == 1:
             return end_t
-        elif price == row["low"] or price == row["high"]:
-            return open_t + (end_t - open_t) / 2  # midpoint
         else:
-            return open_t
+            return open_t + (end_t - open_t) / 2 # midpoint
 
     # Draw trades
-    for i, ((buy_idx, buy_price), (sell_idx, sell_price)) in enumerate(zip(buys, sells)):
-        buy_t = get_trade_time(df.iloc[buy_idx], buy_price)
-        sell_t = get_trade_time(df.iloc[sell_idx], sell_price)
+    for i, ((buy_idx, buy_price, buy_feature), (sell_idx, sell_price, sell_feature)) in enumerate(zip(buys, sells)):
+        buy_t = get_trade_time(df.iloc[buy_idx], buy_feature)
+        sell_t = get_trade_time(df.iloc[sell_idx], sell_feature)
 
         fig.add_trace(go.Scatter(x=[buy_t, sell_t],y=[buy_price, sell_price],mode="lines+markers", line=dict(color="black" if sell_price > buy_price else "brown",width=3),showlegend=(i == 0),marker=dict(size=6), name="Trade"))
 
@@ -366,7 +371,7 @@ def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predic
     fig.update_layout(height=600)
     fig.show()
 
-def profit_inference(train_session_dir, csv_to_infer, bank_start, error_margin):
+def profit_inference(train_session_dir, csv_to_infer, bank_start, plot_interactive_plot=False):
     # read the training session data and recreate the training environment for inference
     json_to_inference = os.path.join(train_session_dir,"args.json")
     with open(json_to_inference, 'r') as f:
@@ -443,10 +448,11 @@ def profit_inference(train_session_dir, csv_to_infer, bank_start, error_margin):
     # df[i] -> should give the real price of the interval i
     # all_predictions[i] -> should give the upcoming args.output_window intervals' predictions after the interval i
     # so if we are at the end of the interval0, df[i] will give the data from interval0, and all_predictions will give the data from interval1-8
-    # we will use the df[i] as an initial price for teh all_predictions[i]
+    # we will use the df[i] as an initial price for the all_predictions[i]
 
     values, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders = toast_bread_agent(inference_dataset, df, all_predictions, bank_start=bank_start, error_margin=1.75)
-    plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
+    if plot_interactive_plot:
+        plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
     
     return values
 
@@ -457,16 +463,19 @@ def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_va
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(trading_agents_and_values)))
 
+    max_value = bank_start
     for (k, v), c in zip(trading_agents_and_values.items(), colors):
-        plt.plot(v, color=c, label=k)
+        max_value = max(max(v), max_value)
+        if k in ["volatility_agent", "low_high_slope_agent", "yesterday_trend_breaking_agent", "candlestick_pattern_agent", "buy_yesterdays_low_sell_yesterdays_high_agent"]:
+            plt.plot(v, color=c, label=k, linestyle="dashed")
+        else:
+            plt.plot(v, color=c, label=k, linestyle="dotted")
         plt.text(len(v) - 1, v[-1], f" {k}", color=c, va="center", fontsize=15)
-        
-    min_1000 = int(min(min(toast_bread_values), min([min(vs) for vs in trading_agents_and_values.values()])))
-    max_1000 = int(max(max(toast_bread_values), max([max(vs) for vs in trading_agents_and_values.values()])))
-    for y in range(min_1000, max_1000 + 1, 1000):
+    
+    for y in range(bank_start, int(max_value), 1000):
         plt.axhline(y=y, color="gray", linestyle=":", linewidth=0.8)
 
-    plt.plot(start_filled_toast_bread, color="black", linestyle="--", linewidth=2, label="toast_bread")
+    plt.plot(start_filled_toast_bread, color="black", linestyle="solid", linewidth=2, label="toast_bread")
     plt.text(len(start_filled_toast_bread) - 1, start_filled_toast_bread[-1], " toast_bread", color="black", va="center", fontsize=15, fontweight="bold")
     plt.legend()
 
