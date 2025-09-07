@@ -319,13 +319,13 @@ def low_high_slope_agent(df, bank_start, window=16, error_margin=0):
         predicted_next_high = history["high"].iloc[-1] + slope_high * 2
         
         # buy at open and sell at today's high
-        open_buy_condition = ((predicted_high - today_data["open"]) > error_margin) and ((today_data["high"] - predicted_high) > error_margin)
+        open_buy_condition = ((predicted_high - today_data["open"]) > error_margin * today_data["open"]) and ((today_data["high"] - predicted_high) > error_margin * today_data["high"])
         # buy at today's low and sell at tomorrow's high
-        buy_condition = ((predicted_next_high - predicted_low) > 2 * error_margin) and ((predicted_low - today_data["low"]) > error_margin)
+        buy_condition = predicted_next_high > predicted_low and ((predicted_low - today_data["low"]) > error_margin * today_data["low"])
 
         if action == "sell":
             # sell the moment you go negative, or if today's predicted high is bigger than buying price
-            sell_condition = ((today_data["open"] - buyed_at < 0) or (predicted_high - buyed_at) > error_margin) and ((today_data["high"] - predicted_high) > error_margin)
+            sell_condition = ((today_data["open"] - buyed_at < 0) or (predicted_high - buyed_at) > error_margin * buyed_at) and ((today_data["high"] - predicted_high) > error_margin * today_data["high"])
 
         # if it's better to buy today's opening and sell at high rather than today's low to tomorrows high, do that
         if action == "buy" and open_buy_condition and predicted_high - today_data["open"] > predicted_next_high - predicted_low:
@@ -334,17 +334,17 @@ def low_high_slope_agent(df, bank_start, window=16, error_margin=0):
             action = "sell"
             buyed_at = today_data["open"]
 
-            bank = wallet * (predicted_high - error_margin)
+            bank = wallet * (predicted_high - predicted_high * error_margin)
             wallet = 0
             action = "buy"
         else:
             if action == "buy" and buy_condition and bank > 0:
-                wallet = bank / (predicted_low + error_margin)
+                wallet = bank / (predicted_low + predicted_low * error_margin)
                 bank = 0
                 action = "sell"
-                buyed_at = (predicted_low + error_margin)
+                buyed_at = (predicted_low + predicted_low * error_margin)
             elif action == "sell" and sell_condition:
-                bank = wallet * (predicted_high - error_margin)
+                bank = wallet * (predicted_high - predicted_high * error_margin)
                 wallet = 0
                 action = "buy"
 
@@ -478,14 +478,14 @@ def buy_yesterdays_low_sell_yesterdays_high_agent(df, bank_start, error_margin=0
 
         yesterday = df.iloc[i-1]
         # look at yesterday's low, and buy at that price + some margin if it happens today
-        if action == "buy" and yesterday["low"] - today_data["low"] > error_margin and bank > 0 and today_data["low"] <= yesterday["low"] <= today_data["high"]:
-            wallet = bank / (yesterday["low"] + error_margin)
+        if action == "buy" and yesterday["low"] - today_data["low"] > error_margin * yesterday["low"] and bank > 0 and today_data["low"] <= yesterday["low"] <= today_data["high"]:
+            wallet = bank / (yesterday["low"] + error_margin * yesterday["low"])
             bank = 0
             action = "sell"
             buyed_at = today_data["low"]
         # if we are selling, look at yesterday's high, and sell at that price - some margin if it happens today
-        elif action == "sell" and today_data["high"] - yesterday["high"] > error_margin and wallet > 0 and today_data["low"] <= yesterday["high"] <= today_data["high"]:
-            bank = wallet * (yesterday["high"] - error_margin)
+        elif action == "sell" and today_data["high"] - yesterday["high"] > error_margin * yesterday["high"] and wallet > 0 and today_data["low"] <= yesterday["high"] <= today_data["high"]:
+            bank = wallet * (yesterday["high"] - error_margin * yesterday["high"])
             wallet = 0
             action = "buy"
         # if we are selling and in the negative at the end of the day, sell today from closing price
@@ -531,11 +531,11 @@ def grid_search_strategies(csv_path, coin_name, bank_start):
         'sma_crossover_agent': {'short_window': [1, 2, 4, 8, 16],'long_window': [2, 4, 8, 16, 32, 64]},
         'volatility_agent': {'low_volatility_threshold_coeff': [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0],'high_volatility_threshold_coeff': [1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]},
         'percentage_change_following_agent': {'buying_start': [1, 2, 4, 8, 16, 32],'selling_start': [1, 2, 4, 8, 16, 32]},
-        'low_high_slope_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'error_margin': [1, 2, 4, 8, 16, 32, 50, 100, 250, 500]},
+        'low_high_slope_agent': {'window': [8, 16, 32],'error_margin': [x/200 for x in range(40)]},
         'yesterday_trend_breaking_agent': {'lookback': [1, 2, 4, 8, 16, 32, 48]},
         'mean_reversion_agent': {'window': [1, 2, 4, 8, 16, 32, 48],'threshold': [0.01, 0.025, 0.05, 0.1, 0.2]},
         'candlestick_pattern_agent': {'body_ratio': [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4]},
-        "buy_yesterdays_low_sell_yesterdays_high_agent": {"error_margin":[1, 2, 4, 8, 16, 32, 50, 100, 250, 500]}}
+        "buy_yesterdays_low_sell_yesterdays_high_agent": {"error_margin":[x/200 for x in range(40)]}}
 
     best_results = {}
     for name, agent in strategies.items():
