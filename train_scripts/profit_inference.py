@@ -293,7 +293,7 @@ def plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predic
         buy_t = get_trade_time(df.iloc[buy_idx], buy_feature)
         sell_t = get_trade_time(df.iloc[sell_idx], sell_feature)
 
-        fig.add_trace(go.Scatter(x=[buy_t, sell_t],y=[buy_price, sell_price],mode="lines+markers", line=dict(color="black" if sell_price > buy_price else "brown",width=3),showlegend=(i == 0),marker=dict(size=6), name="Trade"))
+        fig.add_trace(go.Scatter(x=[buy_t, sell_t],y=[buy_price, sell_price],mode="lines+markers", line=dict(color="black" if sell_price > buy_price else "brown",width=3),showlegend=(i == 0),marker=dict(size=6), name="Trade (black for profit, brown for loss)"))
 
     # puts a red shade on the predictions lines
     cutoff_time = df["close_time"].iloc[-1]
@@ -454,7 +454,7 @@ def profit_inference(train_session_dir, csv_to_infer, bank_start, plot_interacti
     if plot_interactive_plot:
         plot_profit_inference(df, buys, sells, intended_orders, upcoming_oclh_predictions, upcoming_orders, delta)
     
-    return values
+    return values, buys, sells
 
 def compare_profits(train_session_dir, trading_agents_and_values, toast_bread_values, toast_bread_wait, bank_start):
     start_filled_toast_bread = [bank_start for _ in range(toast_bread_wait + 1)] + toast_bread_values
