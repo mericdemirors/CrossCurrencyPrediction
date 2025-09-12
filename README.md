@@ -51,3 +51,7 @@ This directory contains scripts and modular components for training and evaluati
 * Explore invertible transforms (Fourier, Wavelet).
 * Design datasets/models that better capture high–low order.
 * Develop hybrid strategies using both past data and future predictions.
+
+# Installation and Usage
+
+Install the [requirements.txt](requirements.txt) and run the notebook [07_train.ipynb](train_scripts/07_train.ipynb) with the instructions.
