@@ -2,6 +2,8 @@
 
 This project explores cryptocurrency price prediction using deep learning models and evaluates them against benchmark and novel trading strategies. The workflow involves data collection, preprocessing, model training, and strategy evaluation.
 
+Check the summarizing presentation at [project_presentation.pdf](project_presentation.pdf)
+
 ## Repository Structure
 
 ### Jupyter Notebooks
